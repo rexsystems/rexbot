@@ -137,13 +137,14 @@ export function App() {
     function onEscape(event: KeyboardEvent) {
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (event.key === "Escape" && !botEditor && !showSettings && !showMemory) {
+        if (voiceBot) { setVoiceBot(null); return; }
         setShowComputer(false);
         setMobileNav(false);
       }
     }
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [botEditor, showSettings, showMemory]);
+  }, [botEditor, showSettings, showMemory, voiceBot]);
 
   const refreshLists = useCallback(async () => {
     const [convs, mems] = await Promise.all([
@@ -452,14 +453,13 @@ export function App() {
                     <Group gap={6}>
                       <OrbitDots active />
                       <Text size="xs" c="dimmed">
-                        Rex e pe treabă
+                        Rex is working
                       </Text>
                     </Group>
                   ) : null}
                 </div>
               </Group>
               <Group gap={4} wrap="nowrap">
-                {activeConversation?.bot ? <Tooltip label="Live voice"><ActionIcon aria-label="Live voice" variant="subtle" size={44} disabled={busy} onClick={() => setVoiceBot(activeConversation)}><IconMic size={24} /></ActionIcon></Tooltip> : null}
                 <Tooltip label="Rex Computer"><ActionIcon aria-label="Toggle computer drawer" aria-expanded={showComputer} variant={showComputer ? "light" : "subtle"} size={44} onClick={() => setShowComputer(!showComputer)}><IconComputer size={26} /></ActionIcon></Tooltip>
                 {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
               {activeId ? (
@@ -594,6 +594,37 @@ export function App() {
                     {error}
                   </Alert>
                 ) : null}
+                {voiceBot ? (
+                  <VoiceModal
+                    bot={voiceBot}
+                    settings={settings}
+                    onTranscript={(role, text) => {
+                      setThread((prev) => {
+                        const last = prev.at(-1);
+                        if (last?.kind === "message" && last.message.id.startsWith("voice-live-") && last.message.role === role) {
+                          return [...prev.slice(0, -1), { kind: "message", message: { ...last.message, content: last.message.content + text } }];
+                        }
+                        return [...prev, {
+                          kind: "message",
+                          message: {
+                            id: `voice-live-${role}-${crypto.randomUUID()}`,
+                            conversationId: voiceBot.id,
+                            role,
+                            content: text,
+                            createdAt: new Date().toISOString(),
+                            ...(role === "assistant" ? { botId: voiceBot.id, botName: voiceBot.bot?.name ?? voiceBot.title } : {}),
+                          },
+                        }];
+                      });
+                    }}
+                    onClose={() => {
+                      const id = voiceBot.id;
+                      setVoiceBot(null);
+                      void api.getConversation(id).then((data) => setThread(toThread(data.messages))).catch((err) => setError(String(err)));
+                      void refreshLists().catch((err) => setError(String(err)));
+                    }}
+                  />
+                ) : null}
                 <Paper className="composer-pill" radius="xl" p={6} pl={8} pr={8}>
                   {attachments.items.length ? <DraftAttachments items={attachments.items} onRemove={attachments.remove} onRetry={attachments.retry} /> : null}
                   <Group gap={6} align="flex-end" wrap="nowrap">
@@ -602,7 +633,7 @@ export function App() {
                       type="file"
                       hidden
                       multiple
-                      disabled={busy}
+                      disabled={busy || Boolean(voiceBot)}
                       onChange={(e) => { if (e.currentTarget.files?.length) { setError(null); attachments.add(Array.from(e.currentTarget.files)); } e.currentTarget.value = ""; }}
                     />
                     <Tooltip label="Attach">
@@ -610,7 +641,7 @@ export function App() {
                         size={48}
                         variant="subtle"
                         radius="xl"
-                        disabled={busy}
+                        disabled={busy || Boolean(voiceBot)}
                         onClick={() => fileRef.current?.click()}
                         aria-label="Attach files"
                       >
@@ -619,9 +650,9 @@ export function App() {
                     </Tooltip>
                     <MentionInput
                       value={draft}
-                      label={activeConversation?.kind === "group" ? `Message ${activeConversation.title}` : "Message Rex"}
+                      label={activeConversation?.kind === "group" ? `Message ${activeConversation.title}` : `Message ${activeBot.name}`}
                       members={activeConversation?.kind === "group" ? (activeConversation.memberIds ?? []).flatMap((id) => { const member = conversations.find((item) => item.id === id); return member?.bot ? [member] : []; }) : []}
-                      disabled={busy}
+                      disabled={busy || Boolean(voiceBot)}
                       onChange={setDraft}
                       onSend={() => void send()}
                       onPaste={(event) => {
@@ -629,6 +660,20 @@ export function App() {
                         if (files.length) { event.preventDefault(); setError(null); attachments.add(files); }
                       }}
                     />
+                    {activeConversation?.bot ? (
+                      <Tooltip label="Live voice">
+                        <ActionIcon
+                          size={48}
+                          variant={voiceBot ? "light" : "subtle"}
+                          radius="xl"
+                          disabled={busy}
+                          onClick={() => setVoiceBot(activeConversation)}
+                          aria-label="Live voice"
+                        >
+                          <IconMic size={24} stroke={1.5} />
+                        </ActionIcon>
+                      </Tooltip>
+                    ) : null}
                     <Tooltip label="Send">
                       <ActionIcon
                         size={48}
@@ -636,7 +681,7 @@ export function App() {
                         variant="filled"
                         color="ember"
                         onClick={() => void send()}
-                        disabled={busy || (!draft.trim() && !attachments.items.length) || (attachments.items.length > 0 && !attachments.ready)}
+                        disabled={busy || Boolean(voiceBot) || (!draft.trim() && !attachments.items.length) || (attachments.items.length > 0 && !attachments.ready)}
                         loading={busy}
                         aria-label="Send"
                       >
@@ -711,7 +756,6 @@ export function App() {
       }} /> : null}
 
       {deleteTarget ? <DeleteDialog conversation={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={() => { setDeleteTarget(null); newChat(); void refreshLists().catch((err) => setError(String(err))); }} /> : null}
-      {voiceBot ? <VoiceModal bot={voiceBot} settings={settings} onClose={() => { setVoiceBot(null); void api.getConversation(voiceBot.id).then((data) => setThread(toThread(data.messages))).catch((err) => setError(String(err))); void refreshLists().catch((err) => setError(String(err))); }} /> : null}
       {showSettings ? (
         <SettingsModal
           initial={settings}

@@ -55,7 +55,14 @@ voiceRoutes.post("/voice", async (c) => {
   const history = listMessages(bot.id).filter((message) => ["user", "assistant"].includes(message.role) && (message.content.trim() || message.attachments?.length)).slice(-20).map((message) => ({ role: message.role === "user" ? "user" as const : "model" as const, parts: [{ text: `${message.content.slice(0, 4000)}${message.attachments?.length ? `\nFiles: ${message.attachments.map((file) => `${file.filename} (${file.mimeType}, upload id ${file.id})`).join(", ")}. Use read_upload for text. Image pixels are not provided in this voice session.` : ""}` }] }));
   const setup = {
     model: `models/${model}`,
-    generationConfig: { responseModalities: ["AUDIO"] },
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: bot.bot.voice || "Kore" },
+        },
+      },
+    },
     inputAudioTranscription: {}, outputAudioTranscription: {},
     ...(history.length ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
     systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories().slice(0, 8)), bot.bot)}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. Do not claim a tool action succeeded until its result is returned.` }] },

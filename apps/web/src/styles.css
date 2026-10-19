@@ -46,6 +46,12 @@ body {
   background: #0c0b0a;
 }
 
+.voice-bar {
+  margin-bottom: 0.55rem;
+  background: #171614 !important;
+  border-color: #3c3329 !important;
+}
+
 .composer-pill {
   border: 1px solid #2a2824 !important;
   background: #171614 !important;

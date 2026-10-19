@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { BOT_MOTIONS, BOT_SHAPES, type BotProfile } from "@rex/shared";
+import { BOT_MOTIONS, BOT_SHAPES, BOT_VOICES, DEFAULT_BOT, type BotProfile } from "@rex/shared";
 import { createConversation, updateBot } from "../conversations.js";
 
 function parseProfile(value: unknown): BotProfile | null {
@@ -8,8 +8,17 @@ function parseProfile(value: unknown): BotProfile | null {
   if (typeof bot.name !== "string" || !bot.name.trim() || bot.name.trim().length > 32 || /[\r\n\0]/.test(bot.name)) return null;
   if (typeof bot.color !== "string" || !/^#[a-f\d]{6}$/i.test(bot.color)) return null;
   if (!BOT_SHAPES.includes(bot.shape) || !BOT_MOTIONS.includes(bot.motion) || typeof bot.blink !== "boolean") return null;
+  if (bot.voice !== undefined && !BOT_VOICES.includes(bot.voice)) return null;
   if (typeof bot.instructions !== "string" || bot.instructions.length > 1000) return null;
-  return { name: bot.name.trim(), color: bot.color.toLowerCase(), shape: bot.shape, motion: bot.motion, blink: bot.blink, instructions: bot.instructions.trim() };
+  return {
+    name: bot.name.trim(),
+    color: bot.color.toLowerCase(),
+    shape: bot.shape,
+    motion: bot.motion,
+    blink: bot.blink,
+    voice: bot.voice ?? DEFAULT_BOT.voice,
+    instructions: bot.instructions.trim(),
+  };
 }
 
 export const botRoutes = new Hono();

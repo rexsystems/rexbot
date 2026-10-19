@@ -210,7 +210,7 @@ test("groups keep named replies and an inspectable private-message log", async (
   await page.getByRole("button", { name: "Workshop 2 members", exact: true }).click();
   await expect(page.getByText("I added my review to the group.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Rook Your teammate", exact: true }).click();
-  await page.getByRole("textbox", { name: "Message Rex" }).fill("Ask Puck to review this task.");
+  await page.getByRole("textbox", { name: "Message Rook" }).fill("Ask Puck to review this task.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText("I asked Puck and reviewed the reply.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Customize bot", exact: true })).toBeEnabled();
@@ -448,7 +448,7 @@ test("images paste, drop, enlarge, remove and persist above sent text", async ({
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   await page.unroute("**/uploads");
   await page.evaluate(async (url) => { const blob = await (await fetch(url)).blob(); await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]); }, picture);
-  await page.getByRole("textbox", { name: "Message Rex" }).focus();
+  await page.getByRole("textbox", { name: "Message Photos" }).focus();
   await page.keyboard.press("Control+V");
   await expect(draft.locator("img")).toHaveCount(2);
   const transfer = await page.evaluateHandle((data) => {
@@ -462,7 +462,7 @@ test("images paste, drop, enlarge, remove and persist above sent text", async ({
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   await page.screenshot({ path: "test-results/image-draft.png", fullPage: true });
-  await page.getByRole("textbox", { name: "Message Rex" }).fill("These are my images");
+  await page.getByRole("textbox", { name: "Message Photos" }).fill("These are my images");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.locator(".bubble-user .attachment-image-button")).toHaveCount(3);
   await expect(page.locator(".composer-pill .attachment-card")).toHaveCount(0);

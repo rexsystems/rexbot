@@ -66,17 +66,37 @@ export interface BotExchange {
 
 export const BOT_SHAPES = ["orb", "pebble", "cube", "capsule", "diamond"] as const;
 export const BOT_MOTIONS = ["float", "orbit", "spin", "still"] as const;
+/** Google Live prebuilt voices (speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName). */
+export const BOT_VOICES = [
+  "Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr",
+  "Autonoe", "Umbriel", "Erinome", "Algieba", "Despina", "Alnilam", "Schedar", "Sulafat",
+] as const;
 export interface BotProfile {
   name: string;
   color: string;
   shape: (typeof BOT_SHAPES)[number];
   motion: (typeof BOT_MOTIONS)[number];
   blink: boolean;
+  /** Google Live prebuilt voice name. */
+  voice: (typeof BOT_VOICES)[number];
   instructions: string;
 }
 export const DEFAULT_BOT: BotProfile = {
-  name: "Rex", color: "#66b8ff", shape: "orb", motion: "float", blink: true, instructions: "",
+  name: "Rex", color: "#66b8ff", shape: "orb", motion: "float", blink: true, voice: "Kore", instructions: "",
 };
+
+export function normalizeBotProfile(value: Partial<BotProfile> | null | undefined): BotProfile | undefined {
+  if (!value || typeof value.name !== "string") return undefined;
+  return {
+    name: value.name,
+    color: typeof value.color === "string" ? value.color : DEFAULT_BOT.color,
+    shape: BOT_SHAPES.includes(value.shape as BotProfile["shape"]) ? value.shape as BotProfile["shape"] : DEFAULT_BOT.shape,
+    motion: BOT_MOTIONS.includes(value.motion as BotProfile["motion"]) ? value.motion as BotProfile["motion"] : DEFAULT_BOT.motion,
+    blink: typeof value.blink === "boolean" ? value.blink : DEFAULT_BOT.blink,
+    voice: BOT_VOICES.includes(value.voice as BotProfile["voice"]) ? value.voice as BotProfile["voice"] : DEFAULT_BOT.voice,
+    instructions: typeof value.instructions === "string" ? value.instructions : "",
+  };
+}
 
 export interface MemoryItem {
   id: string;

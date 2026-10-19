@@ -52,8 +52,9 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: "Google demo Your teammate", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Message Google demo" })).toBeVisible();
   await page.getByRole("button", { name: "Live voice", exact: true }).click();
-  await page.getByRole("button", { name: "Start call", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Live voice" })).toBeVisible();
   await expect(page.getByText("Hello from Live.", { exact: true })).toBeVisible();
   await expect.poll(() => toolResponses).toBe(1);
   expect(audioPackets).toBeGreaterThan(0);

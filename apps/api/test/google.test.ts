@@ -53,6 +53,7 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     assert.ok(config.url.includes("access_token=auth_tokens%2Ftest-token"));
     assert.ok(!JSON.stringify(config).includes("google-test-key"));
     assert.equal(config.setup.model, "models/gemini-3.8-live");
+    assert.equal((config.setup.generationConfig as { speechConfig?: { voiceConfig?: { prebuiltVoiceConfig?: { voiceName?: string } } } }).speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName, "Kore");
     assert.ok(JSON.stringify(config.setup).includes("R-38"));
     const auth = requests.find((request) => request.url.endsWith("/auth_tokens"))!;
     assert.equal(auth.body.uses, 1);

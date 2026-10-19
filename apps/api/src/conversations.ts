@@ -1,8 +1,14 @@
 import { nanoid } from "nanoid";
-import type { BotProfile, ChatMessage, Conversation } from "@rex/shared";
+import { normalizeBotProfile, type BotProfile, type ChatMessage, type Conversation } from "@rex/shared";
 import { db, nowIso } from "./db.js";
 import { getReactions } from "./reactions.js";
 import { messageUploads } from "./uploads.js";
+
+function readBot(raw: string | null): BotProfile | undefined {
+  if (!raw) return undefined;
+  try { return normalizeBotProfile(JSON.parse(raw) as Partial<BotProfile>); }
+  catch { return undefined; }
+}
 
 function groupFields(id: string, kind: string): Pick<Conversation, "kind" | "memberIds"> {
   if (kind !== "group") return {};
@@ -28,7 +34,7 @@ export function listConversations(): Conversation[] {
     title: r.title,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    bot: r.bot_profile ? JSON.parse(r.bot_profile) as BotProfile : undefined,
+    bot: readBot(r.bot_profile),
     ...groupFields(r.id, r.kind),
   }));
 }
@@ -47,7 +53,7 @@ export function getConversation(id: string): Conversation | null {
     title: r.title,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    bot: r.bot_profile ? JSON.parse(r.bot_profile) as BotProfile : undefined,
+    bot: readBot(r.bot_profile),
     ...groupFields(r.id, r.kind),
   };
 }
