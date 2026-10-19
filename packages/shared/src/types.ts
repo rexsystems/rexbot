@@ -10,6 +10,8 @@ export interface ChatMessage {
   createdAt: string;
   reactions?: MessageReaction[];
   attachments?: UploadMeta[];
+  botId?: string | null;
+  botName?: string | null;
 }
 
 export const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -46,6 +48,20 @@ export interface Conversation {
   createdAt: string;
   updatedAt: string;
   bot?: BotProfile;
+  kind?: "group";
+  memberIds?: string[];
+}
+
+export interface BotExchange {
+  id: string;
+  groupId: string;
+  fromId: string;
+  toId: string;
+  fromName: string;
+  toName: string;
+  message: string;
+  reply: string;
+  createdAt: string;
 }
 
 export const BOT_SHAPES = ["orb", "pebble", "cube", "capsule", "diamond"] as const;
@@ -85,7 +101,7 @@ export const DEFAULT_SETTINGS: ClientSettings = {
   embeddingModel: "",
 };
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "react_message";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "react_message" | "message_bot";
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";
@@ -99,6 +115,7 @@ export type SseEvent =
   | { type: "user_message"; message: ChatMessage }
   | { type: "reaction"; messageId: string; reactions: MessageReaction[] }
   | { type: "delta"; text: string }
+  | { type: "speaker"; botId: string; botName: string }
   | { type: "tool_start"; tool: string; input?: unknown }
   | { type: "tool_end"; tool: string; output?: string; error?: string }
   | { type: "message_done"; messageId: string }

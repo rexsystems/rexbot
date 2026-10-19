@@ -5,7 +5,6 @@ import {
   ActionIcon,
   Alert,
   AppShell,
-  Badge,
   Box,
   Button,
   Drawer,
@@ -34,6 +33,9 @@ import {
   IconMenu,
   IconBrain,
   IconCustomize,
+  IconGroup,
+  IconPlus,
+  IconChevronDown,
 } from "./icons";
 import type {
   ChatMessage,
@@ -54,10 +56,11 @@ import { SettingsModal } from "./SettingsModal";
 import { ComputerPanel } from "./ComputerPanel";
 import { MessageReactions } from "./MessageReactions";
 import { BotEditor } from "./BotEditor";
+import { GroupEditor } from "./GroupEditor";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 
-const ICON_LG = 28;
+const ICON_LG = 18;
 
 type ThreadItem =
   | { kind: "message"; message: ChatMessage }
@@ -77,12 +80,14 @@ function toThread(messages: ChatMessage[]): ThreadItem[] {
   return messages.filter((message) => message.toolName !== "react_message").map((message): ThreadItem => {
     if (message.role !== "tool") return { kind: "message", message };
     const result = message.toolName === "computer_exec" ? computerResult(message.content) : null;
-    const failed = message.content.startsWith("computer_exec failed:") || Boolean(result && result.exitCode !== 0);
+    const failed = /^(computer_exec failed:|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
     return { kind: "tool", id: message.id, tool: message.toolName ?? "tool", status: failed ? "error" : "done", detail: message.content };
   });
 }
 
 function toolIcon(tool: string) {
+  if (tool === "read_upload") return <IconPaperclip size={ICON_LG} />;
+  if (tool === "message_bot") return <IconGroup size={ICON_LG} />;
   if (tool.includes("search")) return <IconSearch size={ICON_LG} stroke={1.5} />;
   if (tool.includes("fetch") || tool.includes("http")) {
     return <IconWorldWww size={ICON_LG} stroke={1.5} />;
@@ -97,13 +102,14 @@ function computerResult(detail?: string): ComputerResult | null {
   } catch { return null; }
 }
 
-const toolLabels: Record<string, string> = { computer_exec: "Rex Computer", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment" };
+const toolLabels: Record<string, string> = { computer_exec: "Rex Computer", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
 
 export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
   const [showComputer, setShowComputer] = useState(false);
   const [botEditor, setBotEditor] = useState<Conversation | "new" | null>(null);
+  const [groupEditor, setGroupEditor] = useState<Conversation | "new" | null>(null);
   const desktopComputer = useMediaQuery("(min-width: 75em)");
   const [showMemory, setShowMemory] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -201,6 +207,8 @@ export function App() {
     const assistantId = uid();
     let streamingAssistantId = assistantId;
     let conversationId = activeId;
+    let speaker: { botId?: string; botName?: string } = {};
+    let speakerStarted = false;
     setThread((prev) => [
       ...prev,
       { kind: "message", message: userMsg },
@@ -228,6 +236,19 @@ export function App() {
         uploadIds,
         settings,
         onEvent: (ev) => {
+          if (ev.type === "speaker") {
+            speaker = { botId: ev.botId, botName: ev.botName };
+            const currentSpeaker = speaker;
+            if (!speakerStarted) {
+              const currentId = streamingAssistantId;
+              setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === currentId ? { ...item, message: { ...item.message, ...currentSpeaker } } : item));
+            } else {
+              const nextId = uid();
+              streamingAssistantId = nextId;
+              setThread((prev) => [...prev, { kind: "message", message: { id: nextId, conversationId: conversationId ?? "pending", role: "assistant", content: "", createdAt: new Date().toISOString(), ...currentSpeaker } }]);
+            }
+            speakerStarted = true;
+          }
           if (ev.type === "user_message") {
             accepted = true;
             setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === userMsg.id ? { kind: "message", message: ev.message } : item));
@@ -273,6 +294,7 @@ export function App() {
             const id = uid();
             const previousId = streamingAssistantId;
             const nextId = uid();
+            const toolSpeaker = { ...speaker };
             streamingAssistantId = nextId;
             setThread((prev) => [
               ...prev.filter(
@@ -294,6 +316,7 @@ export function App() {
                 kind: "message",
                 message: {
                   id: nextId,
+                  ...toolSpeaker,
                   conversationId: activeId ?? "pending",
                   role: "assistant",
                   content: "",
@@ -313,7 +336,7 @@ export function App() {
                   return item;
                 }
                 const detail =
-                  (ev.tool === "computer_exec" ? ev.output : formatToolDetail(ev.output)) ??
+                  ev.output ??
                   formatToolDetail(ev.error) ??
                   item.detail;
                 return {
@@ -365,22 +388,11 @@ export function App() {
             <Group gap="sm" wrap="nowrap"><BlobAvatar seed="rex-brand" size={46} /><div><Title order={3}>Rex</Title><Text size="xs" c="dimmed">Your AI teammate</Text></div></Group>
             <ActionIcon hiddenFrom="sm" aria-label="Close menu" variant="subtle" size={44} onClick={() => setMobileNav(false)}><IconX /></ActionIcon>
           </Group>
-          <Button
-            fullWidth
-            mb="md"
-            radius="md"
-            leftSection={<IconBotAdd size={28} />}
-            onClick={() => { setBotEditor("new"); setMobileNav(false); }}
-            disabled={busy}
-            size="md"
-          >
-            New bot
-          </Button>
-          <Text size="xs" c="dimmed" fw={600} mb="sm">Your bots</Text>
           <ScrollArea style={{ flex: 1 }} offsetScrollbars type="hover">
             <Stack gap={2}>
+              <Group justify="space-between" wrap="nowrap" mb="xs"><Text size="xs" c="dimmed" fw={600}>Your bots</Text><Tooltip label="New bot"><ActionIcon aria-label="New bot" size={36} variant="subtle" disabled={busy} onClick={() => { setBotEditor("new"); setMobileNav(false); }}><IconPlus size={20} /></ActionIcon></Tooltip></Group>
               {conversations.length === 0 ? <Text size="sm" c="dimmed" px="xs">Create a bot to give it a name and a look of its own.</Text> : null}
-              {conversations.map((c) => (
+              {conversations.filter((c) => c.kind !== "group").map((c) => (
                 <UnstyledButton
                   key={c.id}
                   className={`chat-nav${c.id === activeId ? " active" : ""}`}
@@ -404,6 +416,9 @@ export function App() {
                   </Group>
                 </UnstyledButton>
               ))}
+              <Group justify="space-between" wrap="nowrap" mt="md" mb="xs"><Text size="xs" c="dimmed" fw={600}>Groups</Text><Tooltip label="New group"><ActionIcon aria-label="New group" size={36} variant="subtle" disabled={busy} onClick={() => { setGroupEditor("new"); setMobileNav(false); }}><IconPlus size={20} /></ActionIcon></Tooltip></Group>
+              {!conversations.some((c) => c.kind === "group") ? <Text size="sm" c="dimmed" px="xs">Bring bots together in a group.</Text> : null}
+              {conversations.filter((c) => c.kind === "group").map((c) => <UnstyledButton key={c.id} className={`chat-nav${c.id === activeId ? " active" : ""}`} disabled={busy} onClick={() => void openConversation(c.id).catch((e) => setError(String(e)))}><Group gap="sm" wrap="nowrap"><IconGroup size={32} /><div style={{ minWidth: 0, flex: 1 }}><div className="chat-nav-title">{c.title}</div><Text size="xs" c="dimmed">{c.memberIds?.length ?? 0} members</Text></div></Group></UnstyledButton>)}
             </Stack>
           </ScrollArea>
           <Stack gap={6} className="sidebar-footer">
@@ -440,7 +455,7 @@ export function App() {
               </Group>
               <Group gap={4} wrap="nowrap">
                 <Tooltip label="Rex Computer"><ActionIcon aria-label="Toggle computer drawer" aria-expanded={showComputer} variant={showComputer ? "light" : "subtle"} size={44} onClick={() => setShowComputer(!showComputer)}><IconComputer size={26} /></ActionIcon></Tooltip>
-                {activeId ? <Tooltip label="Customize bot"><ActionIcon aria-label="Customize bot" size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
+                {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
               {activeId ? (
                 <Tooltip label="Delete conversation">
                   <ActionIcon
@@ -468,15 +483,15 @@ export function App() {
               <Stack gap="sm">
                 {thread.length === 0 ? (
                   <Stack className="empty-chat" align="center" justify="center" gap="lg">
-                    <BlobAvatar seed={activeId ?? "rex-brand"} size={132} appearance={activeBot} />
+                    {activeConversation?.kind === "group" ? <Group justify="center">{activeConversation.memberIds?.map((id) => <BlobAvatar key={id} seed={id} size={72} appearance={conversations.find((c) => c.id === id)?.bot} />)}</Group> : <BlobAvatar seed={activeId ?? "rex-brand"} size={132} appearance={activeBot} />}
                     <Title order={2}>
                       <Text span c="ember" inherit>
-                        {activeBot.name}
+                        {activeConversation?.kind === "group" ? activeConversation.title : activeBot.name}
                       </Text>{" "}
                       has room to work.
                     </Title>
                       <Text c="dimmed" ta="center" maw={460} size="lg">
-                      {activeId ? "Bring a question, a file, or something to figure out." : "Create a bot with its own look, then give it something to work on."}
+                      {activeConversation?.kind === "group" ? "Give the group a task. Members reply in order and can ask each other for help." : activeId ? "Bring a question, a file, or something to figure out." : "Create a bot with its own look, then give it something to work on."}
                     </Text>
                     <Group justify="center" gap="sm">{!activeId ? <Button leftSection={<IconBotAdd size={24} />} onClick={() => setBotEditor("new")}>Create your first bot</Button> : <Button variant="default" leftSection={<IconSearch size={24} />} onClick={() => setDraft("Search the web for ")}>Research something</Button>}<Button variant="default" leftSection={<IconComputer size={24} />} onClick={() => setShowComputer(true)}>Open Rex Computer</Button></Group>
                   </Stack>
@@ -485,42 +500,19 @@ export function App() {
                     if (item.kind === "tool") {
                       const result = item.tool === "computer_exec" ? computerResult(item.detail) : null;
                       return (
-                        <Paper
-                          key={item.id}
-                          className="tool-row msg-in"
-                          p="xs"
-                          px="sm"
-                          radius="xl"
-                          bg="dark.7"
-                        >
-                          <Group gap="sm" wrap="nowrap">
-                            {item.status === "running" ? (
-                              <Loader size="sm" color="ember" />
-                            ) : (
-                              toolIcon(item.tool)
-                            )}
-                            <div style={{ minWidth: 0 }}>
-                              <Badge
-                                size="sm"
-                                color={
-                                  item.status === "error"
-                                    ? "red"
-                                    : item.status === "running"
-                                      ? "yellow"
-                                      : "teal"
-                                }
-                                variant="light"
-                              >
-                                {item.status === "running" ? "running" : item.status} ·{" "}
-                                {toolLabels[item.tool] ?? item.tool}
-                              </Badge>
-                              {item.detail ? <details className="tool-detail"><summary>View activity</summary>{result ? <><Text size="xs" c="dimmed">Command</Text><pre>{result.command}</pre><Text size="xs" c="dimmed">Output · exit {result.exitCode}{result.timedOut ? " · Timed out" : ""}</Text><pre>{result.output}</pre></> : <pre>{item.detail}</pre>}</details> : null}
-                            </div>
-                          </Group>
-                        </Paper>
+                        <details key={item.id} className="tool-row tool-detail msg-in" data-status={item.status}>
+                          <summary aria-label={`View ${toolLabels[item.tool] ?? item.tool} activity`}>
+                            {item.status === "running" ? <Loader size={16} color="ember" /> : toolIcon(item.tool)}
+                            <span className="tool-label">{toolLabels[item.tool] ?? item.tool}</span>
+                            <span className="tool-status">{item.status === "running" ? "Working" : item.status === "error" ? "Failed" : "Done"}</span>
+                            <IconChevronDown size={14} />
+                          </summary>
+                          <div className="tool-output">{item.detail ? result ? <><Text size="xs" c="dimmed">Command</Text><pre>{result.command}</pre><Text size="xs" c="dimmed">Output · exit {result.exitCode}{result.timedOut ? " · Timed out" : ""}</Text><pre>{result.output}</pre></> : <pre>{item.detail}</pre> : <Text size="sm" c="dimmed">{item.status === "running" ? "Waiting for the tool to return…" : "No output was returned."}</Text>}</div>
+                        </details>
                       );
                     }
                     const m = item.message;
+                    const messageBot = conversations.find((c) => c.id === m.botId)?.bot ?? activeBot;
                     if (m.role !== "user" && m.role !== "assistant") return null;
                     if (
                       (!m.content || isEmptyNoiseContent(m.content)) &&
@@ -536,7 +528,7 @@ export function App() {
                         >
                           <BlobAvatar
                             seed={activeId ?? "rex-think"}
-                              appearance={activeBot}
+                              appearance={messageBot}
                             size={32}
                             pulse
                           />
@@ -565,13 +557,13 @@ export function App() {
                           ) : (
                             <BlobAvatar
                               seed={activeId ?? "rex-msg"}
-                              appearance={activeBot}
+                              appearance={messageBot}
                               size={26}
                               float
                             />
                           )}
                           <Text size="xs" c="dimmed" ff="monospace">
-                            {isUser ? "You" : activeBot.name}
+                            {isUser ? "You" : m.botName ?? activeBot.name}
                           </Text>
                         </Group>
                         {m.attachments?.length ? <SentAttachments items={m.attachments} /> : null}
@@ -627,8 +619,8 @@ export function App() {
                     <Textarea
                       style={{ flex: 1 }}
                       value={draft}
-                      aria-label="Message Rex"
-                      placeholder="Message Rex…"
+                      aria-label={activeConversation?.kind === "group" ? `Message ${activeConversation.title}` : "Message Rex"}
+                      placeholder={activeConversation?.kind === "group" ? `Message ${activeConversation.title}…` : "Message Rex…"}
                       minRows={1}
                       maxRows={6}
                       autosize
@@ -712,7 +704,14 @@ export function App() {
 
       {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
 
-      {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} existingNames={conversations.map((bot) => bot.bot?.name ?? bot.title)} onClose={() => setBotEditor(null)} onSave={(bot) => {
+      {groupEditor ? <GroupEditor initial={groupEditor === "new" ? undefined : groupEditor} bots={conversations} onBotCreated={(bot) => setConversations((prev) => [bot, ...prev.filter((c) => c.id !== bot.id)])} onClose={() => setGroupEditor(null)} onSave={(group) => {
+        const isNew = groupEditor === "new";
+        setGroupEditor(null);
+        setConversations((prev) => [group, ...prev.filter((c) => c.id !== group.id)]);
+        setActiveId(group.id);
+        if (isNew) { setThread([]); setDraft(""); attachments.clear(); setError(null); }
+      }} /> : null}
+      {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} existingNames={conversations.filter((bot) => bot.kind !== "group").map((bot) => bot.bot?.name ?? bot.title)} onClose={() => setBotEditor(null)} onSave={(bot) => {
         const isNew = botEditor === "new";
         setBotEditor(null);
         setConversations((previous) => [bot, ...previous.filter((item) => item.id !== bot.id)]);

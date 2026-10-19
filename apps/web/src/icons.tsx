@@ -4,7 +4,7 @@ import {
   Delete02Icon, FloppyDiskIcon, GlobeIcon, Key01Icon, Menu01Icon,
   MessageAdd01Icon, Search01Icon, SentIcon, Settings01Icon,
   PlayIcon, StopIcon, ArrowReloadHorizontalIcon, Brain01Icon,
-  SmileIcon, CustomizeIcon, PanelRightCloseIcon, UserAdd01Icon,
+  SmileIcon, CustomizeIcon, PanelRightCloseIcon, UserAdd01Icon, UserGroupIcon, ArrowDown01Icon,
 } from "@hugeicons/core-free-icons";
 
 function glyph(icon: typeof Add01Icon) {
@@ -35,3 +35,5 @@ export const IconReact = glyph(SmileIcon);
 export const IconBotAdd = glyph(UserAdd01Icon);
 export const IconCustomize = glyph(CustomizeIcon);
 export const IconCollapse = glyph(PanelRightCloseIcon);
+export const IconGroup = glyph(UserGroupIcon);
+export const IconChevronDown = glyph(ArrowDown01Icon);

@@ -5,6 +5,7 @@ import { isPreviewImage, type ClientSettings } from "@rex/shared";
 import { db } from "../db.js";
 import { computer } from "../computer.js";
 import { isReaction, setReaction } from "../reactions.js";
+import type { MessagingContext } from "../botMessaging.js";
 
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse") as (
@@ -146,7 +147,7 @@ export async function runTool(
   name: string,
   argsJson: string,
   settings: ClientSettings,
-  context?: { userMessageId: string },
+  context?: { userMessageId: string } & Partial<MessagingContext>,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -157,6 +158,11 @@ export async function runTool(
   }
 
   switch (name) {
+    case "message_bot": {
+      if (!context?.botId || !context.budget) return "message_bot unavailable in this context.";
+      const { messageBot } = await import("../botMessaging.js");
+      return messageBot(settings, { botId: context.botId, groupId: context.groupId, budget: context.budget }, args.bot_id, args.message);
+    }
     case "computer_exec": {
       try {
         if (typeof args.command !== "string") return "computer_exec requires a command string.";

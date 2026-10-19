@@ -10,6 +10,7 @@ import type {
   MessageReaction,
   ReactionEmoji,
   BotProfile,
+  BotExchange,
 } from "@rex/shared";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
@@ -41,6 +42,9 @@ export const deleteUpload = (id: string) => json<{ ok: boolean }>(`/uploads/${en
 export function saveBot(profile: BotProfile, id?: string) {
   return json<Conversation>(`/bots${id ? `/${encodeURIComponent(id)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) });
 }
+
+export const saveGroup = (title: string, memberIds: string[], id?: string) => json<Conversation>(`/groups${id ? `/${encodeURIComponent(id)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, memberIds }) });
+export const groupExchanges = (id: string) => json<BotExchange[]>(`/groups/${encodeURIComponent(id)}/exchanges`);
 
 export function getConversation(id: string) {
   return json<{ conversation: Conversation; messages: ChatMessage[] }>(

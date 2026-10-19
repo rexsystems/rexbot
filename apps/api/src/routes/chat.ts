@@ -31,6 +31,7 @@ import {
 import { runTool } from "../tools/index.js";
 import { db } from "../db.js";
 import { messageUploads } from "../uploads.js";
+import { activeChats, peers } from "../groups.js";
 
 export const chatRoutes = new Hono();
 
@@ -56,7 +57,7 @@ function historyToLlm(messages: ReturnType<typeof listMessages>): LlmMessage[] {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
     .filter((m) => m.content.trim().length > 0 || m.attachments?.length)
-    .map((m) => ({ role: m.role as "user" | "assistant", content: `${m.content}${m.attachments?.length ? `\n\n[Attached files: ${m.attachments.map((upload) => `${upload.filename} (${upload.mimeType}, upload id: ${upload.id})`).join(", ")}. Use read_upload for text documents. ${m.attachments.some((upload) => isPreviewImage(upload.mimeType)) ? "Image pixels are not available to this text-only model. Do not claim to have viewed them." : ""}]` : ""}` }));
+    .map((m) => ({ role: m.role as "user" | "assistant", content: `${m.botName ? `[${m.botName}]: ` : ""}${m.content}${m.attachments?.length ? `\n\n[Attached files: ${m.attachments.map((upload) => `${upload.filename} (${upload.mimeType}, upload id: ${upload.id})`).join(", ")}. Use read_upload for text documents. ${m.attachments.some((upload) => isPreviewImage(upload.mimeType)) ? "Image pixels are not available to this text-only model. Do not claim to have viewed them." : ""}]` : ""}` }));
 }
 
 chatRoutes.post("/chat", async (c) => {
@@ -83,10 +84,15 @@ chatRoutes.post("/chat", async (c) => {
   let conversation = body.conversationId
     ? getConversation(body.conversationId)
     : null;
+  if (body.conversationId && !conversation) return c.json({ error: "Conversation not found" }, 404);
   const isNew = !conversation;
   if (!conversation) {
     conversation = createConversation(titleFromMessage(message || "Image attachments"));
   }
+  if (activeChats.has(conversation.id)) return c.json({ error: "This conversation is already working. Wait for it to finish." }, 409);
+  const responders = conversation.kind === "group" ? (conversation.memberIds ?? []).map(getConversation).filter((bot) => bot?.bot) : [conversation];
+  if (!responders.length) return c.json({ error: "Add bots to this group before sending a message." }, 400);
+  activeChats.add(conversation.id);
 
   const userMessage = insertMessage({
     conversationId: conversation.id,
@@ -102,16 +108,11 @@ chatRoutes.post("/chat", async (c) => {
     conversation = getConversation(conversation.id)!;
   }
 
-  const memories = await retrieveMemories(settings, message);
-  const system = buildSystemPrompt(formatMemoryBlock(memories), conversation.bot);
-
-  const llmMessages: LlmMessage[] = [
-    { role: "system", content: system },
-    ...historyToLlm(listMessages(conversation.id)),
-  ];
+  let memoryBlock: string;
+  try { memoryBlock = formatMemoryBlock(await retrieveMemories(settings, message)); }
+  catch (error) { activeChats.delete(conversation.id); throw error; }
 
   const encoder = new TextEncoder();
-  const tools = toOpenAiTools();
   const conv = conversation;
 
   const stream = new ReadableStream({
@@ -123,7 +124,18 @@ chatRoutes.post("/chat", async (c) => {
       try {
         send({ type: "conversation", conversation: conv });
         send({ type: "user_message", message: userMessage });
-
+        const budget = { remaining: 6 };
+        for (const responder of responders) {
+        if (!responder) continue;
+        const speaker = responder.bot ? { botId: responder.id, botName: responder.bot.name } : {};
+        if (speaker.botId && speaker.botName) send({ type: "speaker", botId: speaker.botId, botName: speaker.botName });
+        const roster = peers(responder.id, conv.kind === "group" ? conv.id : undefined);
+        const tools = toOpenAiTools().filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
+        const groupContext = conv.kind === "group" ? `\nYou are in group ${JSON.stringify(conv.title)}. Speak only for yourself. Other members' prior replies are labelled. Build on useful work, check claims, and avoid repeating answers. Each member gets one turn per user message.` : "";
+        const llmMessages: LlmMessage[] = [
+          { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot)}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.` },
+          ...historyToLlm(listMessages(conv.id)),
+        ];
         let assistantText = "";
         const maxToolRounds = 6;
 
@@ -174,7 +186,7 @@ chatRoutes.post("/chat", async (c) => {
             break;
           }
 
-          const toolCalls: LlmToolCall[] = [...toolAcc.values()].map((t) => ({
+          const toolCalls: LlmToolCall[] = [...toolAcc.values()].slice(0, 4).map((t) => ({
             id: t.id || `call_${Math.random().toString(36).slice(2)}`,
             type: "function",
             function: { name: t.name, arguments: t.arguments },
@@ -191,6 +203,7 @@ chatRoutes.post("/chat", async (c) => {
               conversationId: conv.id,
               role: "assistant",
               content,
+              ...speaker,
             });
           }
 
@@ -204,7 +217,7 @@ chatRoutes.post("/chat", async (c) => {
               call.function.name,
               call.function.arguments,
               settings,
-              { userMessageId: userMessage.id },
+              { userMessageId: userMessage.id, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget },
             );
             if (call.function.name === "react_message") {
               try {
@@ -213,6 +226,7 @@ chatRoutes.post("/chat", async (c) => {
               } catch { /* Invalid arguments produce a plain-text tool error. */ }
             }
             let toolError: string | undefined;
+            if (call.function.name === "message_bot" && /^(message_bot failed:|message_bot unavailable)/.test(output)) toolError = output;
             if (call.function.name === "computer_exec") {
               if (output.startsWith("computer_exec failed:")) toolError = output;
               else {
@@ -233,6 +247,7 @@ chatRoutes.post("/chat", async (c) => {
               content: output,
               toolName: call.function.name,
               toolCallId: call.id,
+              ...speaker,
             });
             llmMessages.push({
               role: "tool",
@@ -256,15 +271,17 @@ chatRoutes.post("/chat", async (c) => {
           conversationId: conv.id,
           role: "assistant",
           content: assistantText || "(no response)",
+          ...speaker,
         });
         send({ type: "message_done", messageId: saved.id });
-        send({ type: "done" });
 
         void extractAndStoreMemories({
           settings,
           userMessage: message,
           assistantMessage: saved.content,
         });
+        }
+        send({ type: "done" });
       } catch (err) {
         send({
           type: "error",
@@ -272,6 +289,7 @@ chatRoutes.post("/chat", async (c) => {
         });
         send({ type: "done" });
       } finally {
+        activeChats.delete(conv.id);
         controller.close();
       }
     },

@@ -12,6 +12,11 @@ export interface ToolDefinition {
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
+    name: "message_bot",
+    description: "Send a private question or task to a bot listed in your available teammates, and receive its real reply. Use when the user asks you to contact it, or a specific second opinion would help. Only bots sharing a group may communicate. Include the context the teammate needs; it cannot see your personal chat. Exchanges are visible to the owner in the group's private-message log. No recursive delegation.",
+    parameters: { type: "object", properties: { bot_id: { type: "string", description: "Exact teammate id from the roster" }, message: { type: "string", description: "Self-contained question/task, up to 4000 characters" } }, required: ["bot_id", "message"] },
+  },
+  {
     name: "computer_exec",
     description: "Run a shell command on Rex Computer, ONLY if the user has started it. Python 3 and Alpine shell are available. Work in /workspace. No network, host files, credentials or GUI. Files last until Stop; commands time out after 20 seconds. Never claim access to the user's computer.",
     parameters: {

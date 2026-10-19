@@ -15,6 +15,8 @@ import { computerRoutes } from "./routes/computer.js";
 import { db } from "./db.js";
 import { isReaction, setReaction } from "./reactions.js";
 import { botRoutes } from "./routes/bots.js";
+import { groupRoutes } from "./routes/groups.js";
+import { activeChats } from "./groups.js";
 
 const app = new Hono();
 const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost", ...(process.env.REX_WEB_ORIGIN ? [process.env.REX_WEB_ORIGIN] : [])];
@@ -51,6 +53,7 @@ app.get("/conversations/:id", (c) => {
 });
 
 app.delete("/conversations/:id", (c) => {
+  if (activeChats.size) return c.json({ error: "Wait for active bot work to finish before deleting a conversation." }, 409);
   deleteConversation(c.req.param("id"));
   return c.json({ ok: true });
 });
@@ -66,6 +69,7 @@ app.route("/", chatRoutes);
 app.route("/", uploadRoutes);
 app.route("/", computerRoutes);
 app.route("/", botRoutes);
+app.route("/", groupRoutes);
 
 app.post("/messages/:id/reactions", async (c) => {
   const id = c.req.param("id");

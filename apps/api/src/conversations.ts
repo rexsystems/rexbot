@@ -4,10 +4,16 @@ import { db, nowIso } from "./db.js";
 import { getReactions } from "./reactions.js";
 import { messageUploads } from "./uploads.js";
 
+function groupFields(id: string, kind: string): Pick<Conversation, "kind" | "memberIds"> {
+  if (kind !== "group") return {};
+  const rows = db.prepare("SELECT bot_id FROM group_members WHERE group_id = ? ORDER BY position").all(id) as Array<{ bot_id: string }>;
+  return { kind: "group", memberIds: rows.map((row) => row.bot_id) };
+}
+
 export function listConversations(): Conversation[] {
   const rows = db
     .prepare(
-      `SELECT id, title, created_at, updated_at, bot_profile FROM conversations ORDER BY updated_at DESC`,
+      `SELECT id, title, created_at, updated_at, bot_profile, kind FROM conversations ORDER BY updated_at DESC`,
     )
     .all() as Array<{
     id: string;
@@ -15,6 +21,7 @@ export function listConversations(): Conversation[] {
     created_at: string;
     updated_at: string;
     bot_profile: string | null;
+    kind: string;
   }>;
   return rows.map((r) => ({
     id: r.id,
@@ -22,16 +29,17 @@ export function listConversations(): Conversation[] {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     bot: r.bot_profile ? JSON.parse(r.bot_profile) as BotProfile : undefined,
+    ...groupFields(r.id, r.kind),
   }));
 }
 
 export function getConversation(id: string): Conversation | null {
   const r = db
     .prepare(
-      `SELECT id, title, created_at, updated_at, bot_profile FROM conversations WHERE id = ?`,
+      `SELECT id, title, created_at, updated_at, bot_profile, kind FROM conversations WHERE id = ?`,
     )
     .get(id) as
-    | { id: string; title: string; created_at: string; updated_at: string; bot_profile: string | null }
+    | { id: string; title: string; created_at: string; updated_at: string; bot_profile: string | null; kind: string }
     | undefined;
   if (!r) return null;
   return {
@@ -40,6 +48,7 @@ export function getConversation(id: string): Conversation | null {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     bot: r.bot_profile ? JSON.parse(r.bot_profile) as BotProfile : undefined,
+    ...groupFields(r.id, r.kind),
   };
 }
 
@@ -53,6 +62,7 @@ export function createConversation(title = "New chat", bot?: BotProfile): Conver
 }
 
 export function updateBot(id: string, bot: BotProfile): Conversation | null {
+  if (getConversation(id)?.kind === "group") return null;
   db.prepare("UPDATE conversations SET bot_profile = ?, updated_at = ? WHERE id = ?").run(JSON.stringify(bot), nowIso(), id);
   return getConversation(id);
 }
@@ -78,8 +88,8 @@ export function deleteConversation(id: string) {
 export function listMessages(conversationId: string): ChatMessage[] {
   const rows = db
     .prepare(
-      `SELECT id, conversation_id, role, content, tool_name, tool_call_id, created_at
-       FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`,
+      `SELECT id, conversation_id, role, content, tool_name, tool_call_id, created_at, bot_id, bot_name
+       FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC`,
     )
     .all(conversationId) as Array<{
     id: string;
@@ -89,6 +99,8 @@ export function listMessages(conversationId: string): ChatMessage[] {
     tool_name: string | null;
     tool_call_id: string | null;
     created_at: string;
+    bot_id: string | null;
+    bot_name: string | null;
   }>;
   return rows.map((r) => ({
     id: r.id,
@@ -100,6 +112,8 @@ export function listMessages(conversationId: string): ChatMessage[] {
     createdAt: r.created_at,
     reactions: getReactions(r.id),
     attachments: messageUploads(r.id),
+    botId: r.bot_id,
+    botName: r.bot_name,
   }));
 }
 
@@ -109,12 +123,14 @@ export function insertMessage(input: {
   content: string;
   toolName?: string | null;
   toolCallId?: string | null;
+  botId?: string;
+  botName?: string;
 }): ChatMessage {
   const id = nanoid();
   const ts = nowIso();
   db.prepare(
-    `INSERT INTO messages (id, conversation_id, role, content, tool_name, tool_call_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO messages (id, conversation_id, role, content, tool_name, tool_call_id, created_at, bot_id, bot_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.conversationId,
@@ -123,6 +139,8 @@ export function insertMessage(input: {
     input.toolName ?? null,
     input.toolCallId ?? null,
     ts,
+    input.botId ?? null,
+    input.botName ?? null,
   );
   touchConversation(input.conversationId);
   return {
@@ -133,6 +151,8 @@ export function insertMessage(input: {
     toolName: input.toolName ?? null,
     toolCallId: input.toolCallId ?? null,
     createdAt: ts,
+    botId: input.botId,
+    botName: input.botName,
   };
 }
 

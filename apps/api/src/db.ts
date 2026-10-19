@@ -72,6 +72,30 @@ const conversationColumns = db.prepare("PRAGMA table_info(conversations)").all()
 if (!conversationColumns.some((column) => column.name === "bot_profile")) {
   db.exec("ALTER TABLE conversations ADD COLUMN bot_profile TEXT");
 }
+if (!conversationColumns.some((column) => column.name === "kind")) db.exec("ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'bot'");
+const messageColumns = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+if (!messageColumns.some((column) => column.name === "bot_id")) db.exec("ALTER TABLE messages ADD COLUMN bot_id TEXT");
+if (!messageColumns.some((column) => column.name === "bot_name")) db.exec("ALTER TABLE messages ADD COLUMN bot_name TEXT");
+db.exec(`
+  CREATE TABLE IF NOT EXISTS group_members (
+    group_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    bot_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (group_id, bot_id)
+  );
+  CREATE TABLE IF NOT EXISTS bot_exchanges (
+    id TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    from_id TEXT NOT NULL,
+    to_id TEXT NOT NULL,
+    from_name TEXT NOT NULL,
+    to_name TEXT NOT NULL,
+    message TEXT NOT NULL,
+    reply TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_exchanges_group ON bot_exchanges(group_id, created_at);
+`);
 
 const uploadColumns = db.prepare("PRAGMA table_info(uploads)").all() as Array<{ name: string }>;
 if (!uploadColumns.some((column) => column.name === "message_id")) {

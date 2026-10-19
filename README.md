@@ -14,6 +14,9 @@ Built by [RexSystems](https://github.com/rexsystems). Runs in your browser or a 
 - **Give it a character:** sphere, pebble, rounded cube, capsule, or diamond geometry. Float, orbit, rotate, or stay still. Device reduced-motion preferences are respected.
 - **Attach images:** paste with Ctrl+V, drag files into the conversation, or use the attachment button. Preview before sending, remove with X, and click to enlarge. Multiple images stay above your message text after reload.
 - **Keep conversations:** messages, attachments, reactions, profiles, and user memories are stored in local SQLite. Bots and people can react with emoji.
+- **Make groups:** use the **+** beside Groups to bring 2-6 existing bots together, or create a new bot directly from the group editor. Members reply in order with their own names and avatars. Edit the group later to add members or change its name.
+- **Let bots collaborate:** a bot can privately contact a teammate from a shared group, including when you ask it from its own chat. The recipient uses the configured model and can verify work with tools. Inspect requests and replies under **Group settings → Private messages**. Personal chat history is not automatically forwarded.
+- **Filter generic output:** every bot receives built-in guidance to finish tasks, inspect tool results, try reasonable alternatives, and apply an adapted version of antislop's 38 core rules. The source snapshot and MIT attribution live in [vendor/antislop](vendor/antislop). No runtime `npx` install is needed.
 - **Use tools:** search through Tavily, fetch pages, read text/PDF attachments, and run Python or shell commands in the computer workspace.
 - **Work beside the computer:** open the right-hand drawer from the conversation toolbar. Collapsing it keeps the container running and its command output available.
 
@@ -30,7 +33,7 @@ pnpm dev
 
 Open **[localhost:5173](http://localhost:5173)**. In **Settings**, enter your model provider's API key, base URL, and model ID. The adapter uses the OpenAI-compatible Chat Completions interface. Defaults point to DeepSeek; choose a model that supports streaming and function tools.
 
-Create a bot from **New bot**, then send it a message. Add a Tavily key in Settings if you want web search.
+Create a bot with the **+** beside **Your bots**, then send it a message. Add a Tavily key in Settings if you want web search. The **+** beside **Groups** opens the group editor.
 
 To run each process separately:
 
@@ -109,21 +112,26 @@ pnpm --filter web exec playwright install chromium
 pnpm test
 ```
 
-The complete test suite needs the Podman image above. API tests use disposable databases and containers. Browser tests start a separate API and web server, use a mock model instead of a paid API key, and exercise real uploads, clipboard image paste, drag & drop, image previews, profile persistence, 3D rendering, reactions, and responsive layouts.
+The complete test suite needs the Podman image above. API tests use disposable databases and containers. Browser tests start a separate API and web server, use a mock model instead of a paid API key, and exercise real uploads, clipboard image paste, drag & drop, image previews, profile persistence, 3D rendering, reactions, groups, private messaging, and responsive layouts.
 
-Avatar meshes share **one WebGL renderer**. Only visible characters are updated, at up to 24 frames per second; the Three.js module loads separately from the main interface. No external model or texture downloads are required. See the [UI validation notes](docs/ui-validation.md) for the checks and implementation choices.
+Avatar meshes share **one WebGL renderer**. Animated visible characters follow the screen's animation frames; stationary characters redraw only when their appearance changes or they blink. Hidden characters and tabs skip rendering. The Three.js module loads separately from the main interface. No external model or texture downloads are required. See the [UI validation notes](docs/ui-validation.md) for the checks and implementation choices.
 
 ## Data and access
 
 - SQLite and uploads live in `data/` by default, or the directory specified with `REX_DATA_DIR`.
 - Model keys are saved in browser local storage and sent to the local API when used. Chat text, selected memories, and tool results are sent to your configured model provider.
+- Group history and private exchanges use the same configured provider. A private recipient receives its profile, the passed task, and up to six recent exchanges with that teammate in the shared group, rather than either bot's personal conversation history. Private exchanges are persisted locally and inspectable by the owner; "private" means outside the shared conversation, not hidden from the owner or model provider.
 - The API binds to loopback and restricts browser origins. It is a local, single-user application and is not configured for public network hosting.
 - Keys, user data, uploads, build outputs, and local agent configuration are excluded from the repository.
 
 ## Current scope
 
-Rexbot provides local chat, customizable bots, memory, attachments, and an offline command workspace. Scheduled/background jobs, multi-user authentication, GUI computer control, and model vision are not implemented. Changes are welcome through GitHub issues and pull requests.
+Rexbot provides local chat, customizable bots, groups, private collaboration, memory, attachments, and an offline command workspace. Every group member gets one turn per user message, with up to six tool rounds per member and four calls per round. A user turn permits at most six private requests total. Private recipients can use up to three tool rounds and cannot delegate recursively. Bots share the existing computer workspace and model settings; prompts guide behavior, while capability and answer quality depend on the configured model and available tools.
+
+Scheduled/background conversations, multi-user authentication, GUI computer control, and model vision are not implemented. Changes are welcome through GitHub issues and pull requests.
 
 ## License
 
 Rexbot is licensed under the **GNU Affero General Public License v3.0 only** (`AGPL-3.0-only`). See [LICENSE](LICENSE) for the full text.
+
+The bundled antislop source snapshot and adapted rules retain their upstream [MIT attribution](vendor/antislop/LICENSE).
