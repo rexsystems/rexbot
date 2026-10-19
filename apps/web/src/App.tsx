@@ -712,7 +712,7 @@ export function App() {
 
       {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
 
-      {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} onClose={() => setBotEditor(null)} onSave={(bot) => {
+      {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} existingNames={conversations.map((bot) => bot.bot?.name ?? bot.title)} onClose={() => setBotEditor(null)} onSave={(bot) => {
         const isNew = botEditor === "new";
         setBotEditor(null);
         setConversations((previous) => [bot, ...previous.filter((item) => item.id !== bot.id)]);

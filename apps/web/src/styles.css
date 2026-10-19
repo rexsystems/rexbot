@@ -249,11 +249,9 @@ body {
 @keyframes blob-pulse {
   0%,
   100% {
-    filter: drop-shadow(0 0 0 transparent);
     transform: rotate(var(--blob-spin, 0deg)) scale(1);
   }
   50% {
-    filter: drop-shadow(0 0 10px rgba(217, 119, 58, 0.35));
     transform: rotate(var(--blob-spin, 0deg)) scale(1.06);
   }
 }
@@ -436,12 +434,10 @@ body {
 .bot-motion-spin .bot-avatar-body { animation: bot-turn 10s linear infinite; animation-delay: var(--avatar-delay); }
 .bot-face-blink { transform-origin: 32px 29px; animation: bot-blink 5.3s ease-in-out infinite; animation-delay: var(--avatar-delay); }
 .bot-busy .bot-avatar-body { animation-duration: 2.5s; }
-.bot-motion-float .bot-ground { animation: bot-shadow 4.8s ease-in-out infinite; animation-delay: var(--avatar-delay); transform-origin: 32px 64px; }
 @keyframes bot-hover { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-4px) rotate(3deg); } }
 @keyframes bot-orbit { 0%, 100% { transform: perspective(160px) rotateY(-17deg) rotateZ(-4deg) translateY(0); } 50% { transform: perspective(160px) rotateY(17deg) rotateZ(4deg) translateY(-3px); } }
 @keyframes bot-turn { from { transform: perspective(180px) rotateY(0deg); } to { transform: perspective(180px) rotateY(360deg); } }
 @keyframes bot-blink { 0%, 43%, 47%, 100% { transform: scaleY(1); } 45% { transform: scaleY(.08); } }
-@keyframes bot-shadow { 0%, 100% { transform: scaleX(1); opacity: 1; } 50% { transform: scaleX(.8); opacity: .6; } }
 .bot-preview { display: flex; flex-direction: column; align-items: center; padding: 18px 12px 26px; border-radius: 14px; background: #11100e; text-align: center; }
 .bot-editor-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 24px; align-items: start; }
 .bot-editor-layout .bot-preview { position: sticky; top: 16px; }

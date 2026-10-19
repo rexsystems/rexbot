@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Alert, Button, ColorInput, Group, Modal, SegmentedControl, Stack, Switch, Text, Textarea, TextInput, UnstyledButton } from "@mantine/core";
-import { DEFAULT_BOT, type BotProfile, type Conversation } from "@rex/shared";
+import { DEFAULT_BOT, suggestBotName, type BotProfile, type Conversation } from "@rex/shared";
 import { BlobAvatar } from "./BlobAvatar";
 import { saveBot } from "./api";
 
@@ -8,8 +8,8 @@ const SHAPE_OPTIONS: Array<{ value: BotProfile["shape"]; label: string }> = [
   { value: "orb", label: "Orb" }, { value: "pebble", label: "Pebble" }, { value: "cube", label: "Cube" }, { value: "capsule", label: "Capsule" }, { value: "diamond", label: "Diamond" },
 ];
 
-export function BotEditor({ initial, onClose, onSave }: { initial?: Conversation; onClose: () => void; onSave: (bot: Conversation) => void }) {
-  const [profile, setProfile] = useState<BotProfile>(initial?.bot ?? { ...DEFAULT_BOT, name: initial ? initial.title.slice(0, 32) : "" });
+export function BotEditor({ initial, existingNames, onClose, onSave }: { initial?: Conversation; existingNames: string[]; onClose: () => void; onSave: (bot: Conversation) => void }) {
+  const [profile, setProfile] = useState<BotProfile>(() => initial?.bot ?? { ...DEFAULT_BOT, name: initial ? initial.title.slice(0, 32) : suggestBotName(existingNames) });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const validColor = /^#[a-f\d]{6}$/i.test(profile.color);

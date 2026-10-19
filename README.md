@@ -6,11 +6,11 @@ Built by [RexSystems](https://github.com/rexsystems). Runs in your browser or a 
 
 ![Rexbot's bot editor showing a green 3D cube character, shape options, and movement settings](docs/images/bot-editor.png)
 
-*The bot editor with a disposable demo profile. Avatars are rendered from 3D meshes with lighting and materials.*
+*The bot editor with a disposable demo profile. Avatars use matte 3D meshes with no gloss or cast shadows.*
 
 ## What you can do
 
-- **Create a bot:** choose its name, color, shape, movement, blinking, and working instructions. Edit it later without losing the conversation.
+- **Create a bot:** start with one of 100 suggested names, then choose its color, shape, movement, blinking, and working instructions. Suggestions avoid existing bot names until the pool is exhausted, then reuse the least-used names. You can always enter your own name. Edit it later without losing the conversation.
 - **Give it a character:** sphere, pebble, rounded cube, capsule, or diamond geometry. Float, orbit, rotate, or stay still. Device reduced-motion preferences are respected.
 - **Attach images:** paste with Ctrl+V, drag files into the conversation, or use the attachment button. Preview before sending, remove with X, and click to enlarge. Multiple images stay above your message text after reload.
 - **Keep conversations:** messages, attachments, reactions, profiles, and user memories are stored in local SQLite. Bots and people can react with emoji.

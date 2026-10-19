@@ -20,37 +20,28 @@ const geometries: Record<BotProfile["shape"], THREE.BufferGeometry> = {
   diamond: new THREE.OctahedronGeometry(.77, 0),
 };
 const eyeGeometry = new THREE.SphereGeometry(1, 20, 16);
-const white = new THREE.MeshStandardMaterial({ color: "#fffaf4", roughness: .19 });
-const iris = new THREE.MeshStandardMaterial({ color: "#132a3d", roughness: .24, metalness: .1 });
-const glint = new THREE.MeshBasicMaterial({ color: "white" });
-const mouthMaterial = new THREE.MeshStandardMaterial({ color: "#17313a", roughness: .8 });
-const shadowCanvas = document.createElement("canvas");
-shadowCanvas.width = shadowCanvas.height = 64;
-const shadowContext = shadowCanvas.getContext("2d")!;
-const shadowGradient = shadowContext.createRadialGradient(32, 32, 0, 32, 32, 32);
-shadowGradient.addColorStop(0, "rgba(0,0,0,.45)");
-shadowGradient.addColorStop(1, "rgba(0,0,0,0)");
-shadowContext.fillStyle = shadowGradient;
-shadowContext.fillRect(0, 0, 64, 64);
-const shadowMaterial = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false });
-const shadowGeometry = new THREE.PlaneGeometry(1.65, 1.65);
+const white = new THREE.MeshLambertMaterial({ color: "#fffaf4" });
+const iris = new THREE.MeshLambertMaterial({ color: "#132a3d" });
+const mouthMaterial = new THREE.MeshLambertMaterial({ color: "#17313a" });
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 interface AvatarView {
   canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; scene: THREE.Scene;
-  character: THREE.Group; eyes: THREE.Group[]; bodyMaterial: THREE.MeshPhysicalMaterial;
-  mouthGeometry: THREE.BufferGeometry; bot: BotProfile; visible: boolean; drawn: boolean; reduced?: boolean;
+  character: THREE.Group; eyes: THREE.Group[]; bodyMaterial: THREE.MeshLambertMaterial;
+  mouthGeometry: THREE.BufferGeometry; bot: BotProfile; visible: boolean; drawn: boolean; size: number; reduced?: boolean; lastBlink?: number;
 }
 const views = new Set<AvatarView>();
 let frame = 0;
-let lastRender = 0;
 
 function draw(view: AvatarView, time: number) {
   const reduced = reducedMotion.matches;
-  const animated = !reduced && (view.bot.motion !== "still" || view.bot.blink);
-  if (view.drawn && !animated && view.reduced === reduced) return;
-  view.reduced = reduced;
   const t = reduced ? 0 : time / 1000;
+  const blinkPhase = (t % 5.2) / 5.2;
+  const blink = !reduced && view.bot.blink && blinkPhase > .91 && blinkPhase < .97 ? Math.max(.045, Math.abs(blinkPhase - .94) / .03) : 1;
+  const moving = !reduced && view.bot.motion !== "still";
+  if (view.drawn && !moving && view.lastBlink === blink && view.reduced === reduced) return;
+  view.reduced = reduced;
+  view.lastBlink = blink;
   view.character.rotation.set(0, 0, 0);
   view.character.position.y = 0;
   if (!reduced) {
@@ -58,10 +49,8 @@ function draw(view: AvatarView, time: number) {
     if (view.bot.motion === "orbit") { view.character.rotation.y = Math.sin(t * .8) * .4; view.character.rotation.z = Math.sin(t * .8) * .065; }
     if (view.bot.motion === "spin") view.character.rotation.y = t * .65;
   }
-  const blinkPhase = (t % 5.2) / 5.2;
-  const blink = !reduced && view.bot.blink && blinkPhase > .91 && blinkPhase < .97 ? Math.max(.045, Math.abs(blinkPhase - .94) / .03) : 1;
   for (const eye of view.eyes) eye.scale.y = blink;
-  const size = Math.min(512, Math.max(32, Math.round(view.canvas.getBoundingClientRect().width * Math.min(devicePixelRatio, 2))));
+  const size = view.size;
   if (view.canvas.width !== size) { view.canvas.width = view.canvas.height = size; }
   renderer.setViewport(0, 0, size, size);
   renderer.setScissor(0, 0, size, size);
@@ -76,8 +65,7 @@ function draw(view: AvatarView, time: number) {
 
 function animate(time: number) {
   frame = requestAnimationFrame(animate);
-  if (document.hidden || time - lastRender < 1000 / 24) return;
-  lastRender = time;
+  if (document.hidden) return;
   for (const view of views) if (view.visible && view.canvas.isConnected) draw(view, time);
 }
 
@@ -94,7 +82,7 @@ export function mountAvatar(canvas: HTMLCanvasElement, bot: BotProfile) {
   scene.add(rim);
   const character = new THREE.Group();
   scene.add(character);
-  const bodyMaterial = new THREE.MeshPhysicalMaterial({ color: bot.color, roughness: .28, metalness: .03, clearcoat: .7, clearcoatRoughness: .22 });
+  const bodyMaterial = new THREE.MeshLambertMaterial({ color: bot.color });
   character.add(new THREE.Mesh(geometries[bot.shape], bodyMaterial));
   function surfaceZ(x: number, y: number) {
     if (bot.shape === "cube") return .5;
@@ -114,21 +102,20 @@ export function mountAvatar(canvas: HTMLCanvasElement, bot: BotProfile) {
     pupil.position.set(.018, -.008, .103);
     pupil.scale.set(.072, .095, .045);
     eye.add(pupil);
-    const highlight = new THREE.Mesh(eyeGeometry, glint);
-    highlight.position.set(.035, .034, .14);
-    highlight.scale.set(.024, .03, .012);
-    eye.add(highlight);
     character.add(eye);
     eyes.push(eye);
   }
   const curve = new THREE.CatmullRomCurve3([[-.13, -.19], [-.07, -.235], [0, -.255], [.07, -.235], [.13, -.19]].map(([x, y]) => new THREE.Vector3(x!, y!, surfaceZ(x!, y!) + .018)));
   const mouthGeometry = new THREE.TubeGeometry(curve, 20, .016, 6, false);
   character.add(new THREE.Mesh(mouthGeometry, mouthMaterial));
-  const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = -.73;
-  scene.add(shadow);
-  const view: AvatarView = { canvas, context, scene, character, eyes, bodyMaterial, mouthGeometry, bot, visible: true, drawn: false };
+  const pixelSize = (width: number) => Math.min(512, Math.max(32, Math.round(width * Math.min(devicePixelRatio, 2))));
+  const view: AvatarView = { canvas, context, scene, character, eyes, bodyMaterial, mouthGeometry, bot, visible: true, drawn: false, size: pixelSize(canvas.getBoundingClientRect().width) };
+  const resizeObserver = new ResizeObserver(([entry]) => {
+    if (!entry) return;
+    const size = pixelSize(entry.contentRect.width);
+    if (size !== view.size) { view.size = size; view.drawn = false; }
+  });
+  resizeObserver.observe(canvas);
   const observer = new IntersectionObserver(([entry]) => { view.visible = Boolean(entry?.isIntersecting); });
   observer.observe(canvas);
   views.add(view);
@@ -136,6 +123,7 @@ export function mountAvatar(canvas: HTMLCanvasElement, bot: BotProfile) {
   if (!frame) frame = requestAnimationFrame(animate);
   return () => {
     observer.disconnect();
+    resizeObserver.disconnect();
     views.delete(view);
     bodyMaterial.dispose();
     mouthGeometry.dispose();

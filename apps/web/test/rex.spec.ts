@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import AxeBuilder from "@axe-core/playwright";
+import { BOT_NAMES } from "@rex/shared";
 
 let model: Server;
 let modelUrl: string;
@@ -161,9 +162,32 @@ test("layout reflows across small phones, tablets and larger text", async ({ pag
   await expect(page.getByRole("button", { name: "Send", exact: true })).toBeFocused();
 });
 
+test("default bot names avoid saved names and stay editable after reload", async ({ page, request }) => {
+  await page.goto("/");
+  const existing = await (await request.get("http://127.0.0.1:18787/conversations")).json();
+  const used = new Set(existing.map((bot: { bot?: { name: string }; title: string }) => (bot.bot?.name ?? bot.title).trim().toLowerCase()));
+  for (let i = 0; i < 2; i++) {
+    await page.getByRole("button", { name: "New bot", exact: true }).click();
+    const name = await page.getByRole("textbox", { name: "Bot name" }).inputValue();
+    expect(BOT_NAMES).toContain(name);
+    expect(used.has(name.toLowerCase())).toBe(false);
+    used.add(name.toLowerCase());
+    await page.getByRole("button", { name: "Create bot", exact: true }).click();
+    await expect(page.getByRole("heading", { name: `${name} has room to work.` })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: `${name} Your teammate`, exact: true }).click();
+    await page.getByRole("button", { name: "Customize bot", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Bot name" })).toHaveValue(name);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  }
+});
+
 test("bots keep their identity, appearance and motion after reload and editing", async ({ page, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "New bot", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Bot name" })).not.toHaveValue("");
+  await expect(page.getByRole("button", { name: "Create bot", exact: true })).toBeEnabled();
+  await page.getByRole("textbox", { name: "Bot name" }).fill("");
   await expect(page.getByRole("button", { name: "Create bot", exact: true })).toBeDisabled();
   await page.getByRole("textbox", { name: "Bot name" }).fill("Milo");
   await page.getByRole("textbox", { name: "Bot color" }).fill("#83cba2");
@@ -176,6 +200,8 @@ test("bots keep their identity, appearance and motion after reload and editing",
   await expect(page.locator(".bot-preview .bot-avatar")).toHaveClass(/bot-motion-orbit/);
   await expect(page.locator(".bot-preview canvas")).toHaveAttribute("data-renderer", "webgl");
   await expect(page.locator(".bot-preview canvas")).toHaveAttribute("data-blink", "false");
+  const previewFrame = await page.locator(".bot-preview canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
+  await expect.poll(() => page.locator(".bot-preview canvas").evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL())).not.toBe(previewFrame);
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   await page.locator(".bot-preview").scrollIntoViewIfNeeded();
   await page.screenshot({ path: "test-results/bot-editor.png", fullPage: true });

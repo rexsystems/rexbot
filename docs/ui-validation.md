@@ -15,8 +15,9 @@ Design read: a conversation workspace for Rex's owner, using the existing warm d
 - Icons: Hugeicons is explicitly requested. Each selected glyph represents its action, including computer, terminal, attachment, settings, and memory.
 - Reactions: emoji are functional message reactions explicitly requested by the user. A Hugeicons smile replaces the plus; chips contain only the emoji. Accessible descriptions distinguish bot reactions from removable user reactions.
 - Bot editor: live preview remains beside the form on desktop and stacks above it on mobile; profile changes are saved server-side and reloaded with the bot's conversation.
-- Avatar materials: Three.js renders actual sphere, pebble, rounded-box, capsule, and octahedron meshes with physical materials, directional/hemisphere lighting, spherical eyes, and tube-geometry mouths. A shared WebGL renderer copies each visible view to its canvas; the module is loaded separately from the main UI.
-- Avatar motion: float, orbit, and spin update the character's 3D transforms; blinking scales its eye groups. Still and the blinking toggle let the user control it. Reduced motion disables movement and blinking in the renderer. Off-screen views and hidden documents are skipped; updates are capped at 24 fps.
+- Avatar materials: Three.js renders actual sphere, pebble, rounded-box, capsule, and octahedron meshes with matte Lambert materials, directional/hemisphere lighting, spherical eyes, and tube-geometry mouths. Specular highlights, eye glints, floor shadows, and CSS drop shadows are removed at the user's request. A shared WebGL renderer copies each visible view to its canvas; the module is loaded separately from the main UI.
+- Avatar motion: float, orbit, and spin update the character's 3D transforms; blinking scales its eye groups. Still and the blinking toggle let the user control it. Reduced motion disables movement and blinking in the renderer. Off-screen views and hidden documents are skipped; updates follow requestAnimationFrame rather than the former 24 fps cap. ResizeObserver caches pixel sizes so animation frames do not read layout; stationary avatars redraw only for blinks, resizing, or preference changes. Actual frame rate depends on the device and number of visible animated bots.
+- Default names: 100 predefined, editable names are selected randomly from the least-used names among saved bots. Comparisons ignore case and surrounding whitespace. Unused names are exhausted before reuse, and repeated cycles stay balanced.
 - Image composer: local object URLs show previews immediately for file selection, Ctrl+V, and file drops. Removable tiles sit inside the composer above the textarea; Send waits for uploads, with retry/error states. Image-only messages are supported.
 - Image history: uploaded files are linked to the exact message in order. Raster previews sit above the user text; clicking opens a labelled Mantine image viewer with previous/next, arrow-key navigation, and Escape dismissal. Removed draft files and local object URLs are cleaned up.
 - Computer: only a real Podman status is shown. Start, stop, execute, timeout, output limits, and filesystem lifetime are implemented, with no simulated desktop.
@@ -24,6 +25,7 @@ Design read: a conversation workspace for Rex's owner, using the existing warm d
 
 ## Verification
 
+- Names and matte-avatar update: build and typecheck pass. Two focused name tests verify 100 unique suggestions, three complete reuse cycles, case/whitespace handling, and uneven existing counts. Browser checks verify default creation without repeats, reload/edit preservation, empty-name validation, live animated WebGL pixels, profile customization, mobile reflow, reduced motion, and editor Axe checks. The README screenshot is refreshed from the matte renderer. Smoothness improvements are implementation changes, not a guaranteed device frame rate.
 - `pnpm build` and `pnpm typecheck` validate shared contracts, API, and web source. Vite reports its existing large-entry-chunk advisory; compilation succeeds.
 - `pnpm --filter api test` runs three tests: legacy bot migration/profile validation, real rootless container isolation with timeout removal, and attachment serving/cleanup with active image formats forced to download.
 - `pnpm --filter web test` uses an isolated temporary database, test container, mock streaming model, and separate API port. It verifies sidebar actions, uploads, computer lifecycle, actual Python execution, streamed model tools, both reaction directions, reaction persistence and removal, activity output, memory deletion, conversation deletion, bad-origin blocking, malformed commands, and JSON-only mutation requests.
@@ -35,7 +37,7 @@ Design read: a conversation workspace for Rex's owner, using the existing warm d
 
 ## Antislop delivery gate
 
-- R-01 PASS: workspace surfaces retain the flat warm palette; character lighting comes from actual 3D lights and physical mesh materials.
+- R-01 PASS: workspace surfaces retain the flat warm palette; character depth comes from actual 3D lights and diffuse matte materials.
 - R-02 PASS: new visible copy uses plain sentences and no em dashes; reaction emoji serve the requested reaction feature.
 - R-03 PASS: narrow, tablet, desktop, and larger-text browser tests verify reflow and no page overflow.
 - R-04 PASS: Hugeicons is user-requested, with action-specific glyphs including a smile for reactions and a right-panel collapse control.
@@ -46,8 +48,8 @@ Design read: a conversation workspace for Rex's owner, using the existing warm d
 - R-09 PASS: status badges represent running, stopped, working, and tool completion states from real data.
 - R-10 PASS: no glassmorphism was added.
 - R-11 PASS: composer, bubbles, buttons, panels, and reaction controls have distinct radii.
-- R-12 PASS: overlays use Mantine's normal elevation; avatar shadows provide the requested character depth and grounding.
-- R-13 PASS: no new glow was added; retained busy-avatar feedback is tied to an active request.
+- R-12 PASS: overlays use Mantine's normal elevation; avatars have no floor or drop shadows.
+- R-13 PASS: avatar drop-shadow glow is removed; no new glow was added.
 - R-14 PASS: the computer's resource list is factual configuration, not an invented feature-card section.
 - R-15 PASS: actions name their outcome: Start computer, Run command, Stop & erase workspace, and Open Rex Computer.
 - R-16 PASS: product copy describes capabilities directly and contains no marketing claims.
