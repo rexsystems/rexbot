@@ -47,7 +47,7 @@ test.afterEach(async ({ request }) => { await request.post("http://127.0.0.1:187
 test("sidebar, isolated computer, streamed reactions and persistence", async ({ page, request }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("heading", { name: "Rex has room to work." })).toBeVisible();
   await page.getByRole("button", { name: "New bot", exact: true }).click();
   await page.getByRole("textbox", { name: "Bot name" }).fill("Rex");
@@ -129,7 +129,7 @@ test("sidebar, isolated computer, streamed reactions and persistence", async ({ 
 
 test("mobile menu, composer and computer panel fit a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByRole("textbox", { name: "Message Rex" })).toBeVisible();
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
@@ -155,7 +155,7 @@ test("mobile menu, composer and computer panel fit a narrow screen", async ({ pa
 test("layout reflows across small phones, tablets and larger text", async ({ page }) => {
   for (const width of [320, 640, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto("/");
+    await page.goto("/app");
     await expect(page.getByRole("textbox", { name: "Message Rex" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole("button", { name: "Open Rex Computer", exact: true }).click();
@@ -164,7 +164,7 @@ test("layout reflows across small phones, tablets and larger text", async ({ pag
     await page.getByRole("button", { name: "Close computer" }).click();
   }
   await page.setViewportSize({ width: 640, height: 900 });
-  await page.goto("/");
+  await page.goto("/app");
   await page.addStyleTag({ content: "html { font-size: 200%; }" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("textbox", { name: "Message Rex" }).fill("A larger text message");
@@ -179,7 +179,7 @@ test("groups keep named replies and an inspectable private-message log", async (
     ids.push((await response.json()).id);
   }
   await page.addInitScript((settings) => localStorage.setItem("rex.settings.v2", JSON.stringify(settings)), { ...DEFAULT_SETTINGS, llmApiKey: "test-only-key", llmBaseUrl: modelUrl });
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "New group", exact: true }).click();
   await expect(page.getByRole("button", { name: "Create group", exact: true })).toBeDisabled();
   await page.getByRole("textbox", { name: "Group name" }).fill("Workshop");
@@ -247,7 +247,7 @@ test("inline mentions route one bot or everyone; old replies show no duplicate s
   for (const name of ["Bix", "Puck Two"]) bots.push(await (await request.post("http://127.0.0.1:18787/bots", { data: { ...DEFAULT_BOT, name } })).json());
   const group = await (await request.post("http://127.0.0.1:18787/groups", { data: { title: "Quiet group", memberIds: bots.map((bot) => bot.id) } })).json();
   await page.addInitScript((settings) => localStorage.setItem("rex.settings.v2", JSON.stringify(settings)), { ...DEFAULT_SETTINGS, llmApiKey: "test-only-key", llmBaseUrl: modelUrl });
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Quiet group 2 members", exact: true }).click();
   const input = page.getByRole("textbox", { name: "Message Quiet group" });
   await input.fill("@pu");
@@ -299,7 +299,7 @@ test("small reaction controls reveal on hover or focus and remain available on t
   const bot = await (await request.post("http://127.0.0.1:18787/bots", { data: { ...DEFAULT_BOT, name: "Reaction test" } })).json();
   const reply = await request.post("http://127.0.0.1:18787/chat", { data: { conversationId: bot.id, message: "Hello", settings: { ...DEFAULT_SETTINGS, llmApiKey: "test-only-key", llmBaseUrl: modelUrl } } });
   expect(reply.status()).toBe(200);
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Reaction test Your teammate", exact: true }).click();
   const trigger = page.getByRole("button", { name: "React to message", exact: true });
   await page.mouse.move(0, 0);
@@ -313,7 +313,7 @@ test("small reaction controls reveal on hover or focus and remain available on t
   const touch = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 }, baseURL: "http://127.0.0.1:15173" });
   try {
     const phone = await touch.newPage();
-    await phone.goto("/");
+    await phone.goto("/app");
     await phone.getByRole("button", { name: "Menu", exact: true }).click();
     await phone.getByRole("button", { name: "Reaction test Your teammate", exact: true }).click();
     const phoneTrigger = phone.getByRole("button", { name: "React to message", exact: true });
@@ -326,7 +326,7 @@ test("small reaction controls reveal on hover or focus and remain available on t
 });
 
 test("default bot names avoid saved names and stay editable after reload", async ({ page, request }) => {
-  await page.goto("/");
+  await page.goto("/app");
   const existing = await (await request.get("http://127.0.0.1:18787/conversations")).json();
   const used = new Set(existing.map((bot: { bot?: { name: string }; title: string }) => (bot.bot?.name ?? bot.title).trim().toLowerCase()));
   for (let i = 0; i < 2; i++) {
@@ -350,7 +350,7 @@ test("default bot names avoid saved names and stay editable after reload", async
 });
 
 test("bots keep their identity, appearance and motion after reload and editing", async ({ page, request }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "New bot", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Bot name" })).not.toHaveValue("");
   await expect(page.getByRole("button", { name: "Create bot", exact: true })).toBeEnabled();
@@ -418,7 +418,7 @@ test("bots keep their identity, appearance and motion after reload and editing",
 test("images paste, drop, enlarge, remove and persist above sent text", async ({ page, context, request }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.addInitScript((url) => localStorage.setItem("rex.settings.v2", JSON.stringify({ llmApiKey: "test-only-key", llmBaseUrl: url, llmModel: "test-model", searchApiKey: "", embeddingModel: "" })), modelUrl);
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.locator("nav").getByRole("button", { name: "Rex Computer", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "New bot", exact: true }).click();
   await page.getByRole("textbox", { name: "Bot name" }).fill("Photos");
@@ -503,7 +503,7 @@ test("images paste, drop, enlarge, remove and persist above sent text", async ({
 
 test("attachment errors retry, oversized files remove and plain-text paste still works", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto("/");
+  await page.goto("/app");
   let first = true;
   await page.route("**/uploads", (route) => {
     if (first) { first = false; return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Upload temporarily unavailable" }) }); }

@@ -206,10 +206,10 @@ export function App() {
     setDraft("");
     setError(null);
     setMobileNav(false);
-    syncUrl("/", history);
+    syncUrl("/app", history);
   }, [attachments]);
 
-  // Deep link from URL, or open the first bot when landing on home with bots.
+  // Deep link from URL, or open the first bot when opening /app with bots.
   useEffect(() => {
     if (!listsLoaded || botEditor) return;
     const route = parseAppPath(window.location.pathname);
@@ -227,20 +227,21 @@ export function App() {
       void openConversation(route.id, { history: "replace" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
       return;
     }
-    if (activeId || !hasBots) return;
+    if (route.kind !== "app" || activeId || !hasBots) return;
     void openConversation(bots[0]!.id, { history: "replace" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, [listsLoaded, botEditor, activeId, conversations, hasBots, bots, openConversation, goHome]);
 
   useEffect(() => {
     function onPopState() {
       const route = parseAppPath(window.location.pathname);
-      if (route.kind === "home") {
+      if (route.kind === "app" || route.kind === "landing") {
         setActiveId(undefined);
         setThread([]);
         attachments.clear();
         setDraft("");
         return;
       }
+      if (route.kind !== "bot" && route.kind !== "group") return;
       void openConversation(route.id, { history: "none" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
     }
     window.addEventListener("popstate", onPopState);

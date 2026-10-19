@@ -4,7 +4,7 @@ import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
-import { App } from "./App";
+import { Root } from "./Root";
 import { theme } from "./theme";
 import "./styles.css";
 
@@ -12,7 +12,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme="dark">
       <Notifications position="top-right" />
-      <App />
+      <Root />
     </MantineProvider>
   </StrictMode>,
 );

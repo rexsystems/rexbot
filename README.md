@@ -33,7 +33,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open **[localhost:5173](http://localhost:5173)**. In **Settings**, enter your model provider's API key, base URL, and model ID. The adapter uses the OpenAI-compatible Chat Completions interface. Defaults point to DeepSeek; choose a model that supports streaming and function tools.
+Open **[localhost:5173](http://localhost:5173)** for the product page, then **Open Rex** (or go to `/app`). In **Settings**, enter your model provider's API key, base URL, and model ID. The adapter uses the OpenAI-compatible Chat Completions interface. Defaults point to DeepSeek; choose a model that supports streaming and function tools.
 
 Create a bot with the **+** beside **Your bots**, then send it a message. Add a Tavily key in Settings if you want web search. The **+** beside **Groups** opens the group editor.
 

@@ -59,7 +59,7 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
       }
     });
   });
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Embedding model", exact: true })).toHaveValue("gemini-embedding-2");
   await expect(page.getByRole("textbox", { name: "Live voice model", exact: true })).toHaveValue("gemini-3.8-live");
@@ -97,7 +97,7 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
 
 test("deletion confirms, cancels, animates, recovers from errors and respects reduced motion", async ({ page, request }) => {
   const bot = await (await request.post("http://127.0.0.1:18787/bots", { data: { ...DEFAULT_BOT, name: "Delete demo" } })).json();
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Delete demo Your teammate", exact: true }).click();
   await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
   await expect(page.getByRole("dialog")).toContainText("Are you sure?");
