@@ -138,6 +138,7 @@ export type SseEvent =
 
 export interface ChatRequestBody {
   conversationId?: string;
+  respondTo?: string;
   message: string;
   uploadIds?: string[];
   settings: ClientSettings;

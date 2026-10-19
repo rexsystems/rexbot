@@ -5,6 +5,25 @@ import { createConversation, getConversation, touchConversation } from "./conver
 
 export const activeChats = new Set<string>();
 
+export function selectGroupResponders(memberIds: string[], message: string, respondTo?: string) {
+  const members = memberIds.map(getConversation).filter((bot) => bot?.bot);
+  if (respondTo === "all" || /(?:^|[\s(,])@everyone(?=$|[\s,.:;!?)])/i.test(message)) return members;
+  if (respondTo) return members.filter((bot) => bot!.id === respondTo);
+  const lower = message.toLowerCase();
+  const mentioned = members.map((bot, order) => {
+    const mention = `@${bot!.bot!.name.toLowerCase()}`;
+    let position = lower.indexOf(mention);
+    while (position >= 0) {
+      const before = lower[position - 1];
+      const after = lower[position + mention.length];
+      if ((!before || /\s|[(,]/.test(before)) && (!after || /[\s,.:;!?)]/.test(after))) break;
+      position = lower.indexOf(mention, position + 1);
+    }
+    return { bot, position, order, length: mention.length };
+  }).filter((entry) => entry.position >= 0).sort((a, b) => a.position - b.position || b.length - a.length || a.order - b.order)[0];
+  return mentioned ? [mentioned.bot] : members.slice(0, 1);
+}
+
 export function saveGroup(title: string, memberIds: string[], id?: string) {
   return db.transaction(() => {
     const group = id ? getConversation(id)! : createConversation(title);
@@ -29,10 +48,11 @@ export function peers(botId: string, groupId?: string) {
   return rows.map((row) => getConversation(row.bot_id)).filter((bot) => bot?.bot).map((bot) => ({ id: bot!.id, name: bot!.bot!.name }));
 }
 
-export function recordExchange(input: Omit<BotExchange, "id" | "createdAt">) {
+export function recordExchange(input: Omit<BotExchange, "id" | "createdAt">, reasoning?: { scope: string; content: string }) {
   const exchange = { ...input, id: nanoid(), createdAt: nowIso() };
   db.prepare(`INSERT INTO bot_exchanges (id, group_id, from_id, to_id, from_name, to_name, message, reply, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(exchange.id, input.groupId, input.fromId, input.toId, input.fromName, input.toName, input.message, input.reply, exchange.createdAt);
+  if (reasoning) db.prepare("INSERT INTO exchange_reasoning (exchange_id, scope, content) VALUES (?, ?, ?)").run(exchange.id, reasoning.scope, reasoning.content);
   return exchange;
 }
 

@@ -15,7 +15,7 @@ test("groups preserve speakers, permit real private replies only among peers, an
   const { groupRoutes } = await import("../src/routes/groups.js");
   const { chatRoutes } = await import("../src/routes/chat.js");
   const { botRoutes } = await import("../src/routes/bots.js");
-  const { activeChats, listExchanges } = await import("../src/groups.js");
+  const { activeChats, listExchanges, selectGroupResponders } = await import("../src/groups.js");
   const { messageBot } = await import("../src/botMessaging.js");
   const alpha = createConversation("Alpha", { ...DEFAULT_BOT, name: "Alpha" });
   const beta = createConversation("Beta", { ...DEFAULT_BOT, name: "Beta" });
@@ -52,6 +52,14 @@ test("groups preserve speakers, permit real private replies only among peers, an
     assert.equal(response.status, 201);
     const group = await response.json() as Conversation;
     assert.equal(group.kind, "group");
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "Coordinate").map((bot) => bot!.id), [alpha.id]);
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "@Beta, check this").map((bot) => bot!.id), [beta.id]);
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "@Beta then @Alpha").map((bot) => bot!.id), [beta.id]);
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "not-an-@Beta-mention").map((bot) => bot!.id), [alpha.id]);
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "@Beta", alpha.id).map((bot) => bot!.id), [alpha.id]);
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "@everyone check this").map((bot) => bot!.id), [alpha.id, beta.id]);
+    assert.deepEqual(selectGroupResponders(group.memberIds!, "Coordinate", outsider.id), []);
+    assert.equal((await post(chatRoutes, "/chat", { conversationId: group.id, message: "Coordinate", respondTo: outsider.id, settings })).status, 400);
     assert.deepEqual(getConversation(group.id)?.memberIds, [alpha.id, beta.id]);
     assert.equal((await post(botRoutes, `/bots/${group.id}`, DEFAULT_BOT)).status, 404);
     assert.equal((await post(groupRoutes, `/groups/${alpha.id}`, { title: "Bad", memberIds: [alpha.id, beta.id] })).status, 404);
@@ -65,7 +73,7 @@ test("groups preserve speakers, permit real private replies only among peers, an
     assert.match(await messageBot(settings, { botId: alpha.id, budget }, alpha.id, "Hello"), /another bot/);
     assert.match(await messageBot(settings, { botId: alpha.id, budget: { remaining: 0 } }, beta.id, "Hello"), /budget is exhausted/);
     assert.equal(budget.remaining, 2);
-    const result = await post(chatRoutes, "/chat", { conversationId: group.id, message: "Coordinate", settings });
+    const result = await post(chatRoutes, "/chat", { conversationId: group.id, message: "Coordinate", respondTo: "all", settings });
     assert.equal(result.status, 200);
     const events = (await result.text()).split("\n\n").filter(Boolean).map((line) => JSON.parse(line.slice(6)) as SseEvent);
     assert.deepEqual(events.filter((event) => event.type === "speaker").map((event) => event.botId), [alpha.id, beta.id]);
@@ -88,6 +96,12 @@ test("groups preserve speakers, permit real private replies only among peers, an
     assert.ok(calls.filter((call) => !call.messages[0]!.content.includes("answering a private request")).every((call) => call.messages[0]!.content.includes("R-38")));
     const log = await groupRoutes.request(`/groups/${group.id}/exchanges`);
     assert.deepEqual(await log.json(), exchanges);
+    for (const [message, expected] of [["Coordinate again", [alpha.id]], ["@Beta check this", [beta.id]], ["@everyone check this", [alpha.id, beta.id]]] as const) {
+      const response = await post(chatRoutes, "/chat", { conversationId: group.id, message, settings });
+      const events = (await response.text()).split("\n\n").filter(Boolean).map((line) => JSON.parse(line.slice(6)) as SseEvent);
+      assert.deepEqual(events.filter((event) => event.type === "speaker").map((event) => event.botId), expected);
+      assert.ok(!events.some((event) => event.type === "error"));
+    }
     await post(groupRoutes, `/groups/${group.id}`, { title: "Renamed team", memberIds: [alpha.id, outsider.id] });
     assert.equal(getConversation(group.id)?.title, "Renamed team");
     assert.match(await messageBot(settings, { botId: alpha.id, budget }, beta.id, "Hello"), /must share a group/);

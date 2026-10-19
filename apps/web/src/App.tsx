@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@mantine/hooks";
-import { DEFAULT_BOT } from "@rex/shared";
+import { botReplyText, DEFAULT_BOT } from "@rex/shared";
 import {
   ActionIcon,
   Alert,
@@ -14,7 +14,6 @@ import {
   ScrollArea,
   Stack,
   Text,
-  Textarea,
   Title,
   Tooltip,
   UnstyledButton,
@@ -60,6 +59,7 @@ import { BotEditor } from "./BotEditor";
 import { GroupEditor } from "./GroupEditor";
 import { VoiceModal } from "./VoiceModal";
 import { DeleteDialog } from "./DeleteDialog";
+import { MentionInput } from "./MentionInput";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 
@@ -492,7 +492,7 @@ export function App() {
                       has room to work.
                     </Title>
                       <Text c="dimmed" ta="center" maw={460} size="lg">
-                      {activeConversation?.kind === "group" ? "Give the group a task. Members reply in order and can ask each other for help." : activeId ? "Bring a question, a file, or something to figure out." : "Create a bot with its own look, then give it something to work on."}
+                      {activeConversation?.kind === "group" ? "Use @name to ping a bot, or @everyone to hear from everyone in order. Otherwise, the first member replies." : activeId ? "Bring a question, a file, or something to figure out." : "Create a bot with its own look, then give it something to work on."}
                     </Text>
                     <Group justify="center" gap="sm">{!activeId ? <Button leftSection={<IconBotAdd size={24} />} onClick={() => setBotEditor("new")}>Create your first bot</Button> : <Button variant="default" leftSection={<IconSearch size={24} />} onClick={() => setDraft("Search the web for ")}>Research something</Button>}<Button variant="default" leftSection={<IconComputer size={24} />} onClick={() => setShowComputer(true)}>Open Rex Computer</Button></Group>
                   </Stack>
@@ -576,7 +576,7 @@ export function App() {
                             {m.content}
                           </Text>
                         ) : (
-                          <MarkdownMessage content={m.content} />
+                          <MarkdownMessage content={botReplyText(m.content, m.botName ?? activeBot.name)} />
                         )}
                         <MessageReactions message={m} enabled={!isUser && !busy} onError={setError} onChange={(reactions) => setThread((prev) => prev.map((entry) => entry.kind === "message" && entry.message.id === m.id ? { ...entry, message: { ...entry.message, reactions } } : entry))} />
                       </Paper>
@@ -617,26 +617,16 @@ export function App() {
                         <IconPaperclip size={26} stroke={1.5} />
                       </ActionIcon>
                     </Tooltip>
-                    <Textarea
-                      style={{ flex: 1 }}
+                    <MentionInput
                       value={draft}
-                      aria-label={activeConversation?.kind === "group" ? `Message ${activeConversation.title}` : "Message Rex"}
-                      placeholder={activeConversation?.kind === "group" ? `Message ${activeConversation.title}…` : "Message Rex…"}
-                      minRows={1}
-                      maxRows={6}
-                      autosize
-                      variant="unstyled"
+                      label={activeConversation?.kind === "group" ? `Message ${activeConversation.title}` : "Message Rex"}
+                      members={activeConversation?.kind === "group" ? (activeConversation.memberIds ?? []).flatMap((id) => { const member = conversations.find((item) => item.id === id); return member?.bot ? [member] : []; }) : []}
                       disabled={busy}
-                      onChange={(e) => setDraft(e.currentTarget.value)}
+                      onChange={setDraft}
+                      onSend={() => void send()}
                       onPaste={(event) => {
                         const files = Array.from(event.clipboardData.items).filter((item) => item.kind === "file").flatMap((item) => { const file = item.getAsFile(); return file ? [file] : []; });
                         if (files.length) { event.preventDefault(); setError(null); attachments.add(files); }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void send();
-                        }
                       }}
                     />
                     <Tooltip label="Send">

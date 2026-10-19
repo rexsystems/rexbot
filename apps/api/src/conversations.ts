@@ -125,6 +125,7 @@ export function insertMessage(input: {
   toolCallId?: string | null;
   botId?: string;
   botName?: string;
+  reasoning?: { content: string; scope: string };
 }): ChatMessage {
   const id = nanoid();
   const ts = nowIso();
@@ -143,6 +144,7 @@ export function insertMessage(input: {
     input.botName ?? null,
   );
   touchConversation(input.conversationId);
+  if (input.reasoning) db.prepare("INSERT INTO message_reasoning (message_id, scope, content) VALUES (?, ?, ?)").run(id, input.reasoning.scope, input.reasoning.content);
   return {
     id,
     conversationId: input.conversationId,

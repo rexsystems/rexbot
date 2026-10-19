@@ -9,6 +9,7 @@ import {
   type MessageReaction,
   MAX_MESSAGE_ATTACHMENTS,
   isPreviewImage,
+  botReplyText,
 } from "@rex/shared";
 import {
   createConversation,
@@ -31,7 +32,8 @@ import {
 import { runTool } from "../tools/index.js";
 import { db } from "../db.js";
 import { messageUploads } from "../uploads.js";
-import { activeChats, peers } from "../groups.js";
+import { activeChats, peers, selectGroupResponders } from "../groups.js";
+import { messageReasoning, reasoningScope, responseReasoning } from "../reasoning.js";
 
 export const chatRoutes = new Hono();
 
@@ -54,12 +56,12 @@ function normalizeSettings(raw: Partial<ClientSettings> | undefined): ClientSett
   };
 }
 
-function historyToLlm(messages: ReturnType<typeof listMessages>): LlmMessage[] {
+export function historyToLlm(messages: ReturnType<typeof listMessages>, settings: ClientSettings, speakerId?: string): LlmMessage[] {
   // Prior turns: only user/assistant text. Tool rounds stay in-request only.
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
     .filter((m) => m.content.trim().length > 0 || m.attachments?.length)
-    .map((m) => ({ role: m.role as "user" | "assistant", content: `${m.botName ? `[${m.botName}]: ` : ""}${m.content}${m.attachments?.length ? `\n\n[Attached files: ${m.attachments.map((upload) => `${upload.filename} (${upload.mimeType}, upload id: ${upload.id})`).join(", ")}. Use read_upload for text documents. ${m.attachments.some((upload) => isPreviewImage(upload.mimeType)) ? "Image pixels are not available to this text-only model. Do not claim to have viewed them." : ""}]` : ""}` }));
+    .map((m) => ({ role: m.role as "user" | "assistant", ...(m.role === "assistant" ? messageReasoning(m.id, settings) : {}), content: `${m.botName && m.botId !== speakerId ? `[${m.botName}]: ` : ""}${m.role === "assistant" ? botReplyText(m.content, m.botName) : m.content}${m.attachments?.length ? `\n\n[Attached files: ${m.attachments.map((upload) => `${upload.filename} (${upload.mimeType}, upload id: ${upload.id})`).join(", ")}. Use read_upload for text documents. ${m.attachments.some((upload) => isPreviewImage(upload.mimeType)) ? "Image pixels are not available to this text-only model. Do not claim to have viewed them." : ""}]` : ""}` }));
 }
 
 chatRoutes.post("/chat", async (c) => {
@@ -92,8 +94,9 @@ chatRoutes.post("/chat", async (c) => {
     conversation = createConversation(titleFromMessage(message || "Image attachments"));
   }
   if (activeChats.has(conversation.id)) return c.json({ error: "This conversation is already working. Wait for it to finish." }, 409);
-  const responders = conversation.kind === "group" ? (conversation.memberIds ?? []).map(getConversation).filter((bot) => bot?.bot) : [conversation];
-  if (!responders.length) return c.json({ error: "Add bots to this group before sending a message." }, 400);
+  if (body.respondTo !== undefined && typeof body.respondTo !== "string") return c.json({ error: "Choose a valid responding bot." }, 400);
+  const responders = conversation.kind === "group" ? selectGroupResponders(conversation.memberIds ?? [], message, body.respondTo) : [conversation];
+  if (!responders.length) return c.json({ error: "Choose a current group member, or add bots to this group before sending." }, 400);
   activeChats.add(conversation.id);
 
   const userMessage = insertMessage({
@@ -133,12 +136,19 @@ chatRoutes.post("/chat", async (c) => {
         if (speaker.botId && speaker.botName) send({ type: "speaker", botId: speaker.botId, botName: speaker.botName });
         const roster = peers(responder.id, conv.kind === "group" ? conv.id : undefined);
         const tools = toOpenAiTools().filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
-        const groupContext = conv.kind === "group" ? `\nYou are in group ${JSON.stringify(conv.title)}. Speak only for yourself. Other members' prior replies are labelled. Build on useful work, check claims, and avoid repeating answers. Each member gets one turn per user message.` : "";
+        const groupContext = conv.kind === "group" ? `\nYou are in group ${JSON.stringify(conv.title)}. You were selected to answer this message. Speak only for yourself, without a speaker label. Other members' prior replies are labelled for context. Build on useful work, check claims, and avoid repeating answers. Use message_bot for a specific teammate's private help when useful; do not invent replies on their behalf. ${responders.length > 1 ? "The user explicitly requested everyone; you each get one turn, in order." : "Only one member is replying publicly to this message."}` : "";
         const llmMessages: LlmMessage[] = [
           { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot)}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.` },
-          ...historyToLlm(listMessages(conv.id)),
+          ...historyToLlm(listMessages(conv.id), settings, responder.id),
         ];
         let assistantText = "";
+        let assistantReasoning: string | undefined;
+        let emittedAnswer = "";
+        const emitAnswer = (text: string, complete = false) => {
+          const visible = botReplyText(text, responder.bot?.name, complete);
+          if (visible.length > emittedAnswer.length) send({ type: "delta", text: visible.slice(emittedAnswer.length) });
+          emittedAnswer = visible;
+        };
         const maxToolRounds = 6;
 
         for (let round = 0; round < maxToolRounds; round++) {
@@ -147,6 +157,8 @@ chatRoutes.post("/chat", async (c) => {
             { id: string; name: string; arguments: string }
           >();
           let content = "";
+          let reasoning: string | undefined;
+          emittedAnswer = "";
           let sawToolCalls = false;
 
           for await (const chunk of streamChatCompletion({
@@ -156,10 +168,11 @@ chatRoutes.post("/chat", async (c) => {
           })) {
             const choice = chunk.choices?.[0];
             const delta = choice?.delta;
+            if (typeof delta?.reasoning_content === "string") reasoning = (reasoning ?? "") + delta.reasoning_content;
             if (delta?.content) {
               content += delta.content;
               assistantText += delta.content;
-              send({ type: "delta", text: delta.content });
+              emitAnswer(content);
             }
             if (delta?.tool_calls) {
               sawToolCalls = true;
@@ -179,6 +192,8 @@ chatRoutes.post("/chat", async (c) => {
               }
             }
           }
+          emitAnswer(content, true);
+          assistantReasoning = reasoning;
 
           if (!sawToolCalls || toolAcc.size === 0) {
             if (!content && !assistantText) {
@@ -198,13 +213,15 @@ chatRoutes.post("/chat", async (c) => {
             role: "assistant",
             content: content || null,
             tool_calls: toolCalls,
+            ...responseReasoning(reasoning, settings),
           });
 
           if (content) {
             insertMessage({
               conversationId: conv.id,
               role: "assistant",
-              content,
+              content: botReplyText(content, responder.bot?.name),
+              reasoning: reasoning === undefined ? undefined : { content: reasoning, scope: reasoningScope(settings) },
               ...speaker,
             });
           }
@@ -261,18 +278,24 @@ chatRoutes.post("/chat", async (c) => {
 
           // reset assistant text for final answer after tools
           assistantText = "";
+          assistantReasoning = undefined;
           if (round === maxToolRounds - 1) {
+            emittedAnswer = "";
             for await (const chunk of streamChatCompletion({ settings, messages: llmMessages })) {
+              const reasoningPart = chunk.choices?.[0]?.delta?.reasoning_content;
+              if (typeof reasoningPart === "string") assistantReasoning = (assistantReasoning ?? "") + reasoningPart;
               const text = chunk.choices?.[0]?.delta?.content;
-              if (text) { assistantText += text; send({ type: "delta", text }); }
+              if (text) { assistantText += text; emitAnswer(assistantText); }
             }
+            emitAnswer(assistantText, true);
           }
         }
 
         const saved = insertMessage({
           conversationId: conv.id,
           role: "assistant",
-          content: assistantText || "(no response)",
+          content: botReplyText(assistantText, responder.bot?.name) || "(no response)",
+          reasoning: assistantReasoning === undefined ? undefined : { content: assistantReasoning, scope: reasoningScope(settings) },
           ...speaker,
         });
         send({ type: "message_done", messageId: saved.id });

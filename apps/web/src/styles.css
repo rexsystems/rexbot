@@ -65,6 +65,10 @@ body {
 .composer-pill:focus-within {
   border-color: #b8b2a6 !important;
 }
+.mention-input { position: relative; flex: 1; min-width: 0; }
+.mention-menu { position: absolute; bottom: calc(100% + 12px); left: 0; z-index: 20; width: min(320px, calc(100vw - 88px)); max-height: 240px; overflow-y: auto; background: #211f1b; border: 1px solid #514a40; border-radius: 10px; padding: 4px; }
+.mention-option { display: block; width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 6px; }
+.mention-option[aria-selected="true"] { background: #3c3329; }
 
 .bubble-user {
   align-self: flex-end;

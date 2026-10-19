@@ -21,12 +21,12 @@ test.beforeAll(async () => {
     modelPrompts.push(messages.find((message) => message.role === "system")?.content ?? "");
     const hasTools = messages.some((message) => message.role === "tool");
     const system = messages.find((message) => message.role === "system")?.content ?? "";
-    const groupTask = messages.some((message) => message.role === "user" && message.content === "Ask Puck to review this task.");
+    const groupTask = messages.some((message) => message.role === "user" && message.content.includes("Ask Puck to review this task."));
     const privateRequest = system.includes("answering a private request");
     const rook = system.includes('Your display name is "Rook"');
     const teammates = groupTask && !privateRequest ? JSON.parse(system.match(/Available teammates for message_bot: (\[[^\n]*\])\. Only these/)?.[1] ?? "[]") : [];
     const delegate = groupTask && rook && !hasTools && !privateRequest;
-    const standaloneReply = privateRequest ? "Puck's private review is ready." : groupTask && !delegate ? rook ? "I asked Puck and reviewed the reply." : "I added my review to the group." : messages.some((message) => message.role === "user" && message.content.includes("image/png")) ? "Image attachments received." : messages.some((message) => message.role === "user" && message.content === "Hello") ? "Hello from your configured bot." : undefined;
+    const standaloneReply = privateRequest ? "Puck's private review is ready." : groupTask && !delegate ? rook ? "I asked Puck and reviewed the reply." : "I added my review to the group." : messages.some((message) => message.role === "user" && message.content.includes("image/png")) ? "Image attachments received." : messages.some((message) => message.role === "user" && message.content.endsWith("Hello")) ? "Hello from your configured bot." : undefined;
     response.setHeader("Content-Type", "text/event-stream");
     const delta = delegate ? { tool_calls: [{ index: 0, id: "delegate-test", type: "function", function: { name: "message_bot", arguments: JSON.stringify({ bot_id: teammates.find((bot: { name: string }) => bot.name === "Puck")?.id, message: "Please review this task." }) } }] } : standaloneReply ? { content: standaloneReply } : hasTools ? { content: "Python calculated 42 inside Rex Computer." } : {
       content: "I'll calculate it in my workspace.",
@@ -196,7 +196,10 @@ test("groups keep named replies and an inspectable private-message log", async (
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   await page.getByRole("button", { name: "Create group", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Workshop has room to work." })).toBeVisible();
-  await page.getByRole("textbox", { name: "Message Workshop" }).fill("Ask Puck to review this task.");
+  await page.getByRole("textbox", { name: "Message Workshop" }).fill("@ev");
+  await page.getByRole("textbox", { name: "Message Workshop" }).press("Enter");
+  await expect(page.getByRole("textbox", { name: "Message Workshop" })).toHaveValue("@everyone ");
+  await page.getByRole("textbox", { name: "Message Workshop" }).pressSequentially("Ask Puck to review this task.");
   await page.getByRole("button", { name: "Send", exact: true }).click();
   await expect(page.getByText("I asked Puck and reviewed the reply.", { exact: true })).toBeVisible();
   await expect(page.getByText("I added my review to the group.", { exact: true })).toBeVisible();
@@ -237,6 +240,59 @@ test("groups keep named replies and an inspectable private-message log", async (
   const conversations = await (await request.get("http://127.0.0.1:18787/conversations")).json();
   expect(conversations.some((conversation: { kind?: string; title: string }) => conversation.kind === "group" && conversation.title === "Studio")).toBe(false);
   for (const id of ids) expect(conversations.some((conversation: { id: string }) => conversation.id === id)).toBe(true);
+});
+
+test("inline mentions route one bot or everyone; old replies show no duplicate speaker label", async ({ page, request }) => {
+  const bots = [];
+  for (const name of ["Bix", "Puck Two"]) bots.push(await (await request.post("http://127.0.0.1:18787/bots", { data: { ...DEFAULT_BOT, name } })).json());
+  const group = await (await request.post("http://127.0.0.1:18787/groups", { data: { title: "Quiet group", memberIds: bots.map((bot) => bot.id) } })).json();
+  await page.addInitScript((settings) => localStorage.setItem("rex.settings.v2", JSON.stringify(settings)), { ...DEFAULT_SETTINGS, llmApiKey: "test-only-key", llmBaseUrl: modelUrl });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Quiet group 2 members", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "Message Quiet group" });
+  await input.fill("@pu");
+  await page.getByRole("option", { name: "@Puck Two", exact: true }).click();
+  await expect(input).toHaveValue("@Puck Two ");
+  await expect(page.getByRole("listbox", { name: "Mention a bot" })).toHaveCount(0);
+  await input.pressSequentially("Hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.locator(".bubble-assistant")).toHaveCount(1);
+  await expect(page.locator(".bubble-assistant")).toContainText("Puck Two");
+  await expect(page.getByRole("button", { name: "Group settings", exact: true })).toBeEnabled();
+  await input.fill("Hello");
+  await input.press("Enter");
+  await expect(page.locator(".bubble-assistant")).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Group settings", exact: true })).toBeEnabled();
+  await input.fill("@ev");
+  await input.press("Enter");
+  await expect(input).toHaveValue("@everyone ");
+  await expect(page.locator(".bubble-assistant")).toHaveCount(2);
+  await input.pressSequentially("Hello");
+  await input.press("Enter");
+  await expect(page.locator(".bubble-assistant")).toHaveCount(4);
+  await expect(page.getByRole("button", { name: "Group settings", exact: true })).toBeEnabled();
+  const stored = await (await request.get(`http://127.0.0.1:18787/conversations/${group.id}`)).json();
+  expect(stored.messages.filter((message: { role: string }) => message.role === "assistant").map((message: { botId: string }) => message.botId)).toEqual([bots[1].id, bots[0].id, bots[0].id, bots[1].id]);
+  await input.fill("@");
+  await input.press("ArrowDown");
+  await input.press("Tab");
+  await expect(input).toHaveValue("@Bix ");
+  await input.fill("@");
+  await input.press("Escape");
+  await expect(page.getByRole("listbox", { name: "Mention a bot" })).toHaveCount(0);
+  await input.fill("@p");
+  await page.setViewportSize({ width: 320, height: 740 });
+  await expect(page.getByRole("option", { name: "@Puck Two", exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await page.screenshot({ path: "test-results/group-mentions.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.route(`**/conversations/${bots[0].id}`, (route) => route.fulfill({ json: { conversation: bots[0], messages: [{ id: "legacy-prefix", conversationId: bots[0].id, role: "assistant", content: "[Bix]: Salut!", botId: bots[0].id, botName: "Bix", createdAt: new Date().toISOString() }] } }));
+  await page.getByRole("button", { name: "Bix Your teammate", exact: true }).click();
+  await expect(page.locator(".bubble-assistant .md-body")).toHaveText("Salut!");
+  await expect(page.locator(".bubble-assistant").getByText("Bix", { exact: true })).toHaveCount(1);
+  await request.delete(`http://127.0.0.1:18787/conversations/${group.id}`);
+  for (const bot of bots) await request.delete(`http://127.0.0.1:18787/conversations/${bot.id}`);
 });
 
 test("small reaction controls reveal on hover or focus and remain available on touch", async ({ page, browser, request }) => {

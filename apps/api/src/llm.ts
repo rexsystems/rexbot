@@ -3,6 +3,7 @@ import type { ClientSettings } from "@rex/shared";
 export interface LlmMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null;
+  reasoning_content?: string | null;
   tool_call_id?: string;
   tool_calls?: LlmToolCall[];
   name?: string;
@@ -21,6 +22,7 @@ export interface ChatCompletionChunk {
   choices?: Array<{
     delta?: {
       content?: string | null;
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         index?: number;
         id?: string;

@@ -97,6 +97,16 @@ db.exec(`
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_exchanges_group ON bot_exchanges(group_id, created_at);
+  CREATE TABLE IF NOT EXISTS message_reasoning (
+    message_id TEXT PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    content TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS exchange_reasoning (
+    exchange_id TEXT PRIMARY KEY REFERENCES bot_exchanges(id) ON DELETE CASCADE,
+    scope TEXT NOT NULL,
+    content TEXT NOT NULL
+  );
 `);
 
 const uploadColumns = db.prepare("PRAGMA table_info(uploads)").all() as Array<{ name: string }>;

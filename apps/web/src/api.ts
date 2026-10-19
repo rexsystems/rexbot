@@ -77,6 +77,7 @@ export async function uploadFile(file: File): Promise<UploadMeta> {
 
 export async function streamChat(opts: {
   conversationId?: string;
+  respondTo?: string;
   message: string;
   uploadIds?: string[];
   settings: ClientSettings;
@@ -88,6 +89,7 @@ export async function streamChat(opts: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       conversationId: opts.conversationId,
+      respondTo: opts.respondTo,
       message: opts.message,
       uploadIds: opts.uploadIds,
       settings: opts.settings,
