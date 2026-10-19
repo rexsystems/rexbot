@@ -17,6 +17,7 @@ import { isReaction, setReaction } from "./reactions.js";
 import { botRoutes } from "./routes/bots.js";
 import { groupRoutes } from "./routes/groups.js";
 import { activeChats } from "./groups.js";
+import { voiceRoutes } from "./routes/voice.js";
 
 const app = new Hono();
 const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost", ...(process.env.REX_WEB_ORIGIN ? [process.env.REX_WEB_ORIGIN] : [])];
@@ -70,6 +71,7 @@ app.route("/", uploadRoutes);
 app.route("/", computerRoutes);
 app.route("/", botRoutes);
 app.route("/", groupRoutes);
+app.route("/", voiceRoutes);
 
 app.post("/messages/:id/reactions", async (c) => {
   const id = c.req.param("id");

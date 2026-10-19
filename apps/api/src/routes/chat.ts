@@ -49,6 +49,8 @@ function normalizeSettings(raw: Partial<ClientSettings> | undefined): ClientSett
     searchApiKey: raw?.searchApiKey?.trim() ?? "",
     embeddingModel:
       raw?.embeddingModel?.trim() || DEFAULT_SETTINGS.embeddingModel,
+    googleApiKey: raw?.googleApiKey?.trim() ?? "",
+    liveModel: raw?.liveModel?.trim() || DEFAULT_SETTINGS.liveModel,
   };
 }
 

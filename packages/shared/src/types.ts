@@ -91,6 +91,9 @@ export interface ClientSettings {
   llmModel: string;
   searchApiKey: string;
   embeddingModel: string;
+  embeddingProvider?: "google" | "openai";
+  googleApiKey?: string;
+  liveModel?: string;
 }
 
 export const DEFAULT_SETTINGS: ClientSettings = {
@@ -98,8 +101,18 @@ export const DEFAULT_SETTINGS: ClientSettings = {
   llmBaseUrl: "https://api.deepseek.com",
   llmModel: "deepseek-flash",
   searchApiKey: "",
-  embeddingModel: "",
+  embeddingModel: "gemini-embedding-2",
+  embeddingProvider: "google",
+  googleApiKey: "",
+  liveModel: "gemini-3.8-live",
 };
+
+export interface VoiceSessionConfig {
+  id: string;
+  url: string;
+  setup: Record<string, unknown>;
+  history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
+}
 
 export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "react_message" | "message_bot";
 

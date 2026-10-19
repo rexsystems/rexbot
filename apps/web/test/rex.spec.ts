@@ -116,6 +116,7 @@ test("sidebar, isolated computer, streamed reactions and persistence", async ({ 
   const chatAccessibility = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
   expect(chatAccessibility.violations).toEqual([]);
   await page.getByRole("button", { name: "Delete conversation" }).click();
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Rex has room to work." })).toBeVisible();
   const blocked = await request.post("http://127.0.0.1:18787/computer/start", { headers: { Origin: "https://evil.example" }, data: {} });
   expect(blocked.status()).toBe(403);
@@ -232,6 +233,7 @@ test("groups keep named replies and an inspectable private-message log", async (
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
+  await page.getByRole("button", { name: "Delete permanently", exact: true }).click();
   const conversations = await (await request.get("http://127.0.0.1:18787/conversations")).json();
   expect(conversations.some((conversation: { kind?: string; title: string }) => conversation.kind === "group" && conversation.title === "Studio")).toBe(false);
   for (const id of ids) expect(conversations.some((conversation: { id: string }) => conversation.id === id)).toBe(true);

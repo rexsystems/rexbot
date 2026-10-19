@@ -1,13 +1,14 @@
 import { nanoid } from "nanoid";
 import type { ClientSettings, MemoryItem } from "@rex/shared";
 import { db, nowIso } from "../db.js";
-import { embedTexts, completeJson } from "../llm.js";
+import { embedTexts, completeJson, embeddingSpace } from "../llm.js";
 
 function cosine(a: number[], b: number[]): number {
   let dot = 0;
   let na = 0;
   let nb = 0;
-  const n = Math.min(a.length, b.length);
+  if (a.length !== b.length) return 0;
+  const n = a.length;
   for (let i = 0; i < n; i++) {
     dot += a[i]! * b[i]!;
     na += a[i]! * a[i]!;
@@ -56,22 +57,33 @@ export async function retrieveMemories(
 ): Promise<MemoryItem[]> {
   const rows = db
     .prepare(
-      `SELECT id, content, embedding, created_at, updated_at FROM memories`,
+      `SELECT id, content, embedding, embedding_space, created_at, updated_at FROM memories`,
     )
     .all() as Array<{
     id: string;
     content: string;
     embedding: string | null;
+    embedding_space: string | null;
     created_at: string;
     updated_at: string;
   }>;
   if (rows.length === 0) return [];
 
-  const queryEmbedding = (await embedTexts(settings, [query]))?.[0] ?? null;
+  const space = embeddingSpace(settings);
+  const queryEmbedding = (await embedTexts(settings, [query], "query"))?.[0] ?? null;
+  if (queryEmbedding) {
+    const missing = rows.filter((row) => row.embedding_space !== space || !row.embedding).slice(0, 16);
+    const vectors = await embedTexts(settings, missing.map((row) => row.content));
+    if (vectors) missing.forEach((row, index) => {
+      row.embedding = JSON.stringify(vectors[index]);
+      row.embedding_space = space;
+      db.prepare("UPDATE memories SET embedding = ?, embedding_space = ? WHERE id = ?").run(row.embedding, space, row.id);
+    });
+  }
 
   const scored = rows.map((row) => {
     let score = keywordScore(query, row.content);
-    if (queryEmbedding && row.embedding) {
+    if (queryEmbedding && row.embedding && row.embedding_space === space) {
       try {
         const emb = JSON.parse(row.embedding) as number[];
         score = Math.max(score, cosine(queryEmbedding, emb));
@@ -108,9 +120,9 @@ export async function upsertMemory(
   const ts = nowIso();
   const emb = (await embedTexts(settings, [trimmed]))?.[0] ?? null;
   db.prepare(
-    `INSERT INTO memories (id, content, embedding, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run(id, trimmed, emb ? JSON.stringify(emb) : null, ts, ts);
+    `INSERT INTO memories (id, content, embedding, created_at, updated_at, embedding_space)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, trimmed, emb ? JSON.stringify(emb) : null, ts, ts, emb ? embeddingSpace(settings) : null);
   return { id, content: trimmed, createdAt: ts, updatedAt: ts };
 }
 

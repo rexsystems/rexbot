@@ -4,6 +4,7 @@ import {
   Group,
   Modal,
   PasswordInput,
+  Select,
   Stack,
   Text,
   TextInput,
@@ -55,6 +56,10 @@ export function SettingsModal(props: {
           value={form.llmModel}
           onChange={(e) => setForm({ ...form, llmModel: e.currentTarget.value })}
         />
+        <Text fw={600} mt="sm">Google AI Studio</Text>
+        <PasswordInput label="Google AI Studio API key" description="Used for Gemini embeddings and live voice." value={form.googleApiKey ?? ""} onChange={(event) => setForm({ ...form, googleApiKey: event.currentTarget.value })} autoComplete="off" visibilityToggleButtonProps={{ "aria-label": "Toggle Google key visibility" }} />
+        <TextInput label="Live voice model" value={form.liveModel ?? "gemini-3.8-live"} onChange={(event) => setForm({ ...form, liveModel: event.currentTarget.value })} />
+        <Select label="Embedding provider" value={form.embeddingProvider ?? "google"} data={[{ value: "google", label: "Google AI Studio" }, { value: "openai", label: "Chat provider (OpenAI compatible)" }]} allowDeselect={false} onChange={(value) => setForm({ ...form, embeddingProvider: value as "google" | "openai", embeddingModel: value === "google" ? "gemini-embedding-2" : "text-embedding-3-small" })} />
         <TextInput
           label="Embedding model"
           value={form.embeddingModel}

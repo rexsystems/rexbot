@@ -99,9 +99,33 @@ export async function* streamChatCompletion(opts: {
 export async function embedTexts(
   settings: ClientSettings,
   texts: string[],
+  purpose: "query" | "document" = "document",
 ): Promise<number[][] | null> {
-  if (!settings.llmApiKey.trim() || texts.length === 0) return null;
+  if (texts.length === 0) return null;
   try {
+    if ((settings.embeddingProvider ?? "google") === "google") {
+      if (!settings.googleApiKey?.trim()) return null;
+      const model = settings.embeddingModel?.trim() || "gemini-embedding-2";
+      const vectors: number[][] = [];
+      for (let start = 0; start < texts.length; start += 4) {
+        const batch = await Promise.all(texts.slice(start, start + 4).map(async (text) => {
+          const formatted = model === "gemini-embedding-2" ? purpose === "query" ? `task: search result | query: ${text}` : `title: none | text: ${text}` : text;
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:embedContent`, {
+            method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": settings.googleApiKey!.trim() },
+            body: JSON.stringify({ model: `models/${model}`, content: { parts: [{ text: formatted }] }, outputDimensionality: 768 }),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!response.ok) throw new Error("Google embedding request failed");
+          const body = await response.json() as { embedding?: { values?: number[] } };
+          const values = body.embedding?.values;
+          if (!values?.length || values.some((value) => !Number.isFinite(value))) throw new Error("Invalid embedding");
+          return values;
+        }));
+        vectors.push(...batch);
+      }
+      return vectors;
+    }
+    if (!settings.llmApiKey.trim()) return null;
     const res = await fetch(`${baseUrl(settings)}/embeddings`, {
       method: "POST",
       headers: {
@@ -123,6 +147,10 @@ export async function embedTexts(
   } catch {
     return null;
   }
+}
+
+export function embeddingSpace(settings: ClientSettings): string {
+  return (settings.embeddingProvider ?? "google") === "google" ? `google:${settings.embeddingModel || "gemini-embedding-2"}:768` : `openai:${baseUrl(settings)}:${settings.embeddingModel || "text-embedding-3-small"}`;
 }
 
 export async function completeJson(opts: {

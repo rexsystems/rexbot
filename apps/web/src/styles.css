@@ -421,6 +421,9 @@ body {
 .md-body table { display: block; overflow-x: auto; }
 
 @media (max-width: 48em) {
+  .conversation-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 12px; }
+  .conversation-bar > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  .conversation-bar > :last-child { grid-column: 2; grid-row: 1; gap: 0; }
   .thread-scroll { padding: 12px 12px 8px; }
   .composer-dock { padding: 8px 10px max(12px, env(safe-area-inset-bottom)); }
   .conversation-bar { padding-inline: 10px; gap: 8px; }
@@ -458,6 +461,14 @@ body {
 .reaction-trigger { border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
 .bubble-assistant:hover .reaction-trigger, .message-reactions:focus-within .reaction-trigger, .reaction-trigger[aria-expanded="true"] { opacity: 1; pointer-events: auto; }
 .reaction-trigger:hover { background: #28251f; }
+.delete-scene { height: 148px; position: relative; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+.delete-target { transform-origin: center bottom; }
+.delete-weight { position: absolute; top: -64px; width: 92px; height: 54px; border-radius: 5px; background: #a8a199; border: 3px solid #d5cfc6; opacity: 0; z-index: 1; }
+.deleting .delete-weight { animation: delete-drop 850ms cubic-bezier(.55, .05, .85, .45) forwards; }
+.deleting .delete-target { animation: delete-squash 850ms ease-out forwards; }
+@keyframes delete-drop { 0% { opacity: 1; transform: translateY(0); } 48%, 100% { opacity: 1; transform: translateY(142px); } }
+@keyframes delete-squash { 0%, 43% { transform: scale(1); opacity: 1; } 54% { transform: scale(1.35, .18); opacity: 1; } 75%, 100% { transform: scale(1.45, .08); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .deleting .delete-weight, .deleting .delete-target { animation: none; } }
 @media (hover: none), (pointer: coarse) {
   .app-shell nav .mantine-ActionIcon-root { min-width: 44px; min-height: 44px; }
   .reaction-trigger { opacity: 1; pointer-events: auto; min-width: 44px; min-height: 44px; }

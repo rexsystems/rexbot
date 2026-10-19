@@ -19,6 +19,8 @@ Built by [RexSystems](https://github.com/rexsystems). Runs in your browser or a 
 - **Filter generic output:** every bot receives built-in guidance to finish tasks, inspect tool results, try reasonable alternatives, and apply an adapted version of antislop's 38 core rules. The source snapshot and MIT attribution live in [vendor/antislop](vendor/antislop). No runtime `npx` install is needed.
 - **Use tools:** search through Tavily, fetch pages, read text/PDF attachments, and run Python or shell commands in the computer workspace.
 - **Work beside the computer:** open the right-hand drawer from the conversation toolbar. Collapsing it keeps the container running and its command output available.
+- **Talk live:** open the microphone button in an individual bot's chat for Gemini 3.8 Live audio, interruptions, mute, tool calls, and saved transcripts.
+- **Delete deliberately:** conversation deletion asks for confirmation and plays a short squash animation after you confirm. Reduced-motion preferences skip it; deleting a group keeps its bots.
 
 ## Run locally
 
@@ -45,6 +47,26 @@ pnpm dev:web
 ```
 
 The API listens on **127.0.0.1:8787**. `.env.example` documents the available variables; it is not automatically loaded by the API. Export API variables in your shell. Vite variables belong in `apps/web/.env.local`.
+
+## Google AI Studio: memory and live voice
+
+In **Settings**, add a **Google AI Studio API key** from [AI Studio](https://aistudio.google.com/apikey). This is separate from the chat provider key.
+
+| Role | Default model |
+| --- | --- |
+| Text chat and private teammate replies | Your configured OpenAI-compatible chat model |
+| Memory embeddings | `gemini-embedding-2` |
+| Live voice | `gemini-3.8-live` |
+
+Google documents [Gemini Embedding 2](https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2) and [Gemini 3.8 Live](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-live). The model fields remain editable. Chat-provider embeddings are still available through the embedding-provider selector; existing saved chat-provider configurations are preserved.
+
+Memory embeddings use Google's native `embedContent` endpoint, one vector per text, with 768 dimensions. Vectors are tagged by provider/model so incompatible embeddings are never compared. Old memories are re-embedded lazily, up to 16 per retrieval. Missing keys or failed embedding requests fall back to keyword retrieval.
+
+For voice, open an individual bot, click the microphone, and choose **Start call**. Allow microphone access; localhost or HTTPS is required. **Mute microphone** pauses sending audio, **End call** releases the microphone, and closing the dialog ends the call. Voice is currently one bot at a time; group conversations use text.
+
+The local API issues a one-use Google ephemeral token, locked to the bot's setup and valid for ten minutes. The browser streams 16 kHz PCM and plays Google's PCM responses directly over the [Live WebSocket API](https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket). It sends the last 20 chat messages, attachment metadata, up to eight recent memories, and the bot's profile/rules as context. Raw audio is not saved by Rexbot; transcripts and completed tool activity are saved in the bot's chat. Google receives the audio and context. Model access, quota, and billing depend on your Google account.
+
+Live sessions may run the existing search, fetch, attachment, computer, and teammate tools. A call permits 24 tool calls and six private teammate requests; the computer still needs to be started by the user. In-flight tool work may finish after a call ends and remains in the activity history. Start a new call after a connection or session expires. No system packages or Google SDK installation are required.
 
 ## Rex Computer
 
@@ -112,7 +134,7 @@ pnpm --filter web exec playwright install chromium
 pnpm test
 ```
 
-The complete test suite needs the Podman image above. API tests use disposable databases and containers. Browser tests start a separate API and web server, use a mock model instead of a paid API key, and exercise real uploads, clipboard image paste, drag & drop, image previews, profile persistence, 3D rendering, reactions, groups, private messaging, and responsive layouts.
+The complete test suite needs the Podman image above. API tests use disposable databases and containers. Browser tests start a separate API and web server, use a mock model instead of a paid API key, and exercise real uploads, clipboard image paste, drag & drop, image previews, profile persistence, 3D rendering, reactions, groups, private messaging, and responsive layouts. Google checks simulate the provider responses while exercising real browser microphone capture, AudioWorklet PCM conversion, WebSocket messages, playback, tool callbacks, transcripts, and cleanup. They also cover embedding-provider migration and deletion confirmation, failure recovery, animation, and reduced motion. These checks do not make a paid Google request or measure live speech quality.
 
 Avatar meshes share **one WebGL renderer**. Animated visible characters follow the screen's animation frames; stationary characters redraw only when their appearance changes or they blink. Hidden characters and tabs skip rendering. The Three.js module loads separately from the main interface. No external model or texture downloads are required. See the [UI validation notes](docs/ui-validation.md) for the checks and implementation choices.
 
@@ -120,13 +142,14 @@ Avatar meshes share **one WebGL renderer**. Animated visible characters follow t
 
 - SQLite and uploads live in `data/` by default, or the directory specified with `REX_DATA_DIR`.
 - Model keys are saved in browser local storage and sent to the local API when used. Chat text, selected memories, and tool results are sent to your configured model provider.
+- The Google key is sent to the local API for embeddings and ephemeral-token issuance; the live WebSocket uses only the short-lived token. Live settings stay in API memory for the session and any in-flight tool work. Google receives memory text for embeddings and microphone audio/context during voice calls.
 - Group history and private exchanges use the same configured provider. A private recipient receives its profile, the passed task, and up to six recent exchanges with that teammate in the shared group, rather than either bot's personal conversation history. Private exchanges are persisted locally and inspectable by the owner; "private" means outside the shared conversation, not hidden from the owner or model provider.
 - The API binds to loopback and restricts browser origins. It is a local, single-user application and is not configured for public network hosting.
 - Keys, user data, uploads, build outputs, and local agent configuration are excluded from the repository.
 
 ## Current scope
 
-Rexbot provides local chat, customizable bots, groups, private collaboration, memory, attachments, and an offline command workspace. Every group member gets one turn per user message, with up to six tool rounds per member and four calls per round. A user turn permits at most six private requests total. Private recipients can use up to three tool rounds and cannot delegate recursively. Bots share the existing computer workspace and model settings; prompts guide behavior, while capability and answer quality depend on the configured model and available tools.
+Rexbot provides local chat, customizable bots, groups, private collaboration, Google live voice and memory embeddings, attachments, and an offline command workspace. Every group member gets one turn per user message, with up to six tool rounds per member and four calls per round. A user turn permits at most six private requests total. Private recipients can use up to three tool rounds and cannot delegate recursively. Bots share the existing computer workspace and model settings; prompts guide behavior, while capability and answer quality depend on the configured model and available tools.
 
 Scheduled/background conversations, multi-user authentication, GUI computer control, and model vision are not implemented. Changes are welcome through GitHub issues and pull requests.
 

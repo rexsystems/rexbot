@@ -73,6 +73,8 @@ if (!conversationColumns.some((column) => column.name === "bot_profile")) {
   db.exec("ALTER TABLE conversations ADD COLUMN bot_profile TEXT");
 }
 if (!conversationColumns.some((column) => column.name === "kind")) db.exec("ALTER TABLE conversations ADD COLUMN kind TEXT NOT NULL DEFAULT 'bot'");
+const memoryColumns = db.prepare("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+if (!memoryColumns.some((column) => column.name === "embedding_space")) db.exec("ALTER TABLE memories ADD COLUMN embedding_space TEXT");
 const messageColumns = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
 if (!messageColumns.some((column) => column.name === "bot_id")) db.exec("ALTER TABLE messages ADD COLUMN bot_id TEXT");
 if (!messageColumns.some((column) => column.name === "bot_name")) db.exec("ALTER TABLE messages ADD COLUMN bot_name TEXT");

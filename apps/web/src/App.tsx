@@ -36,6 +36,7 @@ import {
   IconGroup,
   IconPlus,
   IconChevronDown,
+  IconMic,
 } from "./icons";
 import type {
   ChatMessage,
@@ -57,6 +58,8 @@ import { ComputerPanel } from "./ComputerPanel";
 import { MessageReactions } from "./MessageReactions";
 import { BotEditor } from "./BotEditor";
 import { GroupEditor } from "./GroupEditor";
+import { VoiceModal } from "./VoiceModal";
+import { DeleteDialog } from "./DeleteDialog";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 
@@ -110,6 +113,8 @@ export function App() {
   const [showComputer, setShowComputer] = useState(false);
   const [botEditor, setBotEditor] = useState<Conversation | "new" | null>(null);
   const [groupEditor, setGroupEditor] = useState<Conversation | "new" | null>(null);
+  const [voiceBot, setVoiceBot] = useState<Conversation | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const desktopComputer = useMediaQuery("(min-width: 75em)");
   const [showMemory, setShowMemory] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -454,6 +459,7 @@ export function App() {
                 </div>
               </Group>
               <Group gap={4} wrap="nowrap">
+                {activeConversation?.bot ? <Tooltip label="Live voice"><ActionIcon aria-label="Live voice" variant="subtle" size={44} disabled={busy} onClick={() => setVoiceBot(activeConversation)}><IconMic size={24} /></ActionIcon></Tooltip> : null}
                 <Tooltip label="Rex Computer"><ActionIcon aria-label="Toggle computer drawer" aria-expanded={showComputer} variant={showComputer ? "light" : "subtle"} size={44} onClick={() => setShowComputer(!showComputer)}><IconComputer size={26} /></ActionIcon></Tooltip>
                 {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
               {activeId ? (
@@ -465,12 +471,7 @@ export function App() {
                     color="red"
                     radius="xl"
                     aria-label="Delete conversation"
-                    onClick={() =>
-                      void api.deleteConversation(activeId).then(() => {
-                        newChat();
-                        return refreshLists();
-                      }).catch((e) => setError(String(e)))
-                    }
+                    onClick={() => { if (activeConversation) setDeleteTarget(activeConversation); }}
                   >
                     <IconTrash size={22} stroke={1.5} />
                   </ActionIcon>
@@ -719,6 +720,8 @@ export function App() {
         if (isNew) { setThread([]); setDraft(""); attachments.clear(); setError(null); }
       }} /> : null}
 
+      {deleteTarget ? <DeleteDialog conversation={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={() => { setDeleteTarget(null); newChat(); void refreshLists().catch((err) => setError(String(err))); }} /> : null}
+      {voiceBot ? <VoiceModal bot={voiceBot} settings={settings} onClose={() => { setVoiceBot(null); void api.getConversation(voiceBot.id).then((data) => setThread(toThread(data.messages))).catch((err) => setError(String(err))); void refreshLists().catch((err) => setError(String(err))); }} /> : null}
       {showSettings ? (
         <SettingsModal
           initial={settings}
