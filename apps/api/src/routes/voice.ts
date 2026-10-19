@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
-import { buildSystemPrompt, DEFAULT_SETTINGS, END_CALL_TOOL, TOOL_DEFINITIONS, type ClientSettings, type VoiceSessionConfig } from "@rex/shared";
+import { buildSystemPrompt, DEFAULT_SETTINGS, END_CALL_TOOL, toolDefinitions, type ClientSettings, type VoiceSessionConfig } from "@rex/shared";
+import { computer } from "../computer.js";
 import { getConversation, insertMessage, listMessages } from "../conversations.js";
 import { activeChats, peers } from "../groups.js";
 import { runTool } from "../tools/index.js";
@@ -52,7 +53,7 @@ voiceRoutes.post("/voice", async (c) => {
   activeChats.add(bot.id);
   const roster = peers(bot.id);
   const definitions = [
-    ...TOOL_DEFINITIONS.filter((tool) => tool.name !== "react_message" && (tool.name !== "message_bot" || roster.length)),
+    ...toolDefinitions({ desktop: computer.desktop }).filter((tool) => tool.name !== "react_message" && (tool.name !== "message_bot" || roster.length)),
     END_CALL_TOOL,
   ];
   const history = listMessages(bot.id).filter((message) => ["user", "assistant"].includes(message.role) && (message.content.trim() || message.attachments?.length)).slice(-20).map((message) => ({ role: message.role === "user" ? "user" as const : "model" as const, parts: [{ text: `${message.content.slice(0, 4000)}${message.attachments?.length ? `\nFiles: ${message.attachments.map((file) => `${file.filename} (${file.mimeType}, upload id ${file.id})`).join(", ")}. Use read_upload for text. Image pixels are not provided in this voice session.` : ""}` }] }));
@@ -68,7 +69,7 @@ voiceRoutes.post("/voice", async (c) => {
     },
     inputAudioTranscription: {}, outputAudioTranscription: {},
     ...(history.length ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
-    systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories().slice(0, 8)), bot.bot)}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. If the user asks to hang up, end the call, stop the call, or clearly says goodbye to close it, or you decide the call should end, say a brief goodbye if natural and then call end_call so the client disconnects. Do not claim a tool action succeeded until its result is returned.` }] },
+    systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories().slice(0, 8)), bot.bot, { desktop: computer.desktop })}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. If the user asks to hang up, end the call, stop the call, or clearly says goodbye to close it, or you decide the call should end, say a brief goodbye if natural and then call end_call so the client disconnects. Do not claim a tool action succeeded until its result is returned.` }] },
     tools: [{ functionDeclarations: definitions.map(({ name, description, parameters }) => ({ name, description, parameters })) }],
   };
   try {

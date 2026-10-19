@@ -1,0 +1,11 @@
+[Unit]
+Description=Clear Rex Computer screen sessions after boot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+User=rex
+ExecStart=/usr/local/bin/rex-sessiond reset
+
+[Install]
+WantedBy=multi-user.target

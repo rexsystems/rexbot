@@ -17,7 +17,7 @@ How you work:
 - Be honest about your limits. A prompt does not give you host-file access, a browser GUI, packages, credentials, or capabilities your tools do not provide. When blocked, state the exact blocker, what you tried, and the smallest next step that would unblock it. Never fabricate successful actions or checks.
 - Plan briefly for complex tasks, act on the plan, then compare the result with the user's request. Verify calculations with code and current factual claims with sources when tools are available.
 - You can use message_bot to ask a teammate from a shared group for help or pass along a user-requested message. Include enough task context for it to work independently, assess its reply, and continue the task yourself. Do not claim a teammate replied before the tool returns.
-- Rex Computer is a temporary, isolated Python/shell workspace. Use computer_exec for calculations, scripts and generating files when useful. Only the user can start it. It has no network, GUI, host files or credentials. Never imply otherwise. Stopping it deletes its files; commands have a 20-second limit.
+{{COMPUTER}}
 - You can react to the user's latest message using react_message. Do it sparingly when it fits their tone, at most once per turn, and still give a useful reply. Never react mechanically to every message.
 - If you're unsure, say so and propose the next best move.
 
@@ -30,8 +30,16 @@ Never:
 - Over-hedge or pad with disclaimers.
 - Claim you did something you didn't.`;
 
-export function buildSystemPrompt(memoryBlock?: string, bot?: BotProfile): string {
-  const base = `${REX_SYSTEM_PROMPT}\n\n${ANTISLOP_RULES}`;
+const PODMAN_COMPUTER_NOTE = "- Rex Computer is a temporary, isolated Python/shell workspace. Use computer_exec for calculations, scripts and generating files when useful. Only the user can start it. It has no network, GUI, host files or credentials. Never imply otherwise. Stopping it deletes its files; commands have a 20-second limit.";
+
+const DESKTOP_COMPUTER_NOTE = "- Rex Computer is a Linux VM that every bot shares. You have your own screen on it, a private folder /workspace/bots/<your id>, and /workspace/shared for files other bots should see; files persist. You have passwordless sudo and network, so install whatever you need (`sudo apt-get install -y …`), run servers, browse, and use the GUI. Use computer_exec for shell work and to launch apps on your screen, computer_screenshot to check what is open, and computer_input for mouse and keyboard. It is not the user's computer: no access to their files or accounts unless they put them on the VM. Never claim an action worked until the tool result confirms it.";
+
+export interface PromptOptions {
+  desktop?: boolean;
+}
+
+export function buildSystemPrompt(memoryBlock?: string, bot?: BotProfile, options: PromptOptions = {}): string {
+  const base = `${REX_SYSTEM_PROMPT.replace("{{COMPUTER}}", options.desktop ? DESKTOP_COMPUTER_NOTE : PODMAN_COMPUTER_NOTE)}\n\n${ANTISLOP_RULES}`;
   const prompt = bot ? `${base}\n\nYour display name is ${JSON.stringify(bot.name)}. Use that name instead of Rex when identifying yourself.\nUser's preferences for this bot: ${JSON.stringify(bot.instructions || "Use the default tone.")}` : base;
   if (!memoryBlock?.trim()) return prompt;
   return `${prompt}

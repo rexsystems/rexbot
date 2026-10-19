@@ -88,7 +88,7 @@ function toThread(messages: ChatMessage[]): ThreadItem[] {
   return messages.filter((message) => message.toolName !== "react_message").map((message): ThreadItem => {
     if (message.role !== "tool") return { kind: "message", message };
     const result = message.toolName === "computer_exec" ? computerResult(message.content) : null;
-    const failed = /^(computer_exec failed:|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
+    const failed = /^(computer_exec failed:|computer_(input|screenshot) (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
     return { kind: "tool", id: message.id, tool: message.toolName ?? "tool", status: failed ? "error" : "done", detail: message.content };
   });
 }
@@ -96,6 +96,7 @@ function toThread(messages: ChatMessage[]): ThreadItem[] {
 function toolIcon(tool: string) {
   if (tool === "read_upload") return <IconPaperclip size={ICON_LG} />;
   if (tool === "message_bot") return <IconGroup size={ICON_LG} />;
+  if (tool === "computer_input" || tool === "computer_screenshot") return <IconComputer size={ICON_LG} />;
   if (tool.includes("search")) return <IconSearch size={ICON_LG} stroke={1.5} />;
   if (tool.includes("fetch") || tool.includes("http")) {
     return <IconWorldWww size={ICON_LG} stroke={1.5} />;
@@ -110,12 +111,14 @@ function computerResult(detail?: string): ComputerResult | null {
   } catch { return null; }
 }
 
-const toolLabels: Record<string, string> = { computer_exec: "Rex Computer", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
+const toolLabels: Record<string, string> = { computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
 
 export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
   const [showComputer, setShowComputer] = useState(false);
+  const [computerHasDesktop, setComputerHasDesktop] = useState(false);
+  const [computerFocus, setComputerFocus] = useState<string | undefined>();
   const [botEditor, setBotEditor] = useState<Conversation | "new" | null>(null);
   const [groupEditor, setGroupEditor] = useState<Conversation | "new" | null>(null);
   const [voiceBot, setVoiceBot] = useState<Conversation | null>(null);
@@ -146,6 +149,19 @@ export function App() {
     [thread, hiddenThreadCount],
   );
   const lastVisible = visibleThread.at(-1);
+  const computerBots = useMemo(() => {
+    if (!activeConversation) return [];
+    const members = activeConversation.kind === "group" ? (activeConversation.memberIds ?? []).flatMap((id) => conversations.filter((item) => item.id === id)) : [activeConversation];
+    return members.flatMap((item) => item.bot ? [{ id: item.id, name: item.bot.name }] : []);
+  }, [activeConversation, conversations]);
+
+  useEffect(() => {
+    api.computerStatus().then((status) => {
+      if (!status.desktop) return;
+      setComputerHasDesktop(true);
+      if (status.running && window.matchMedia("(min-width: 75em)").matches) setShowComputer(true);
+    }).catch(() => undefined);
+  }, []);
   const lastVisibleMessageId = lastVisible?.kind === "message" ? lastVisible.message.id : undefined;
 
   useEffect(() => {
@@ -384,6 +400,10 @@ export function App() {
             );
           }
           if (ev.type === "tool_start") {
+            if (ev.tool === "computer_input" || ev.tool === "computer_screenshot") {
+              setComputerFocus(speaker.botId);
+              if (desktopComputer) setShowComputer(true);
+            }
             const id = uid();
             const previousId = streamingAssistantId;
             const nextId = uid();
@@ -477,7 +497,7 @@ export function App() {
         onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!busy) { setError(null); attachments.add(Array.from(event.dataTransfer.files)); } } }}
         className="app-shell"
         navbar={{ width: 290, breakpoint: "sm", collapsed: { mobile: !mobileNav } }}
-        aside={{ width: 420, breakpoint: "lg", collapsed: { desktop: !showComputer, mobile: true } }}
+        aside={{ width: computerHasDesktop ? { lg: 460, xl: 600 } : 420, breakpoint: "lg", collapsed: { desktop: !showComputer, mobile: true } }}
         padding={0}
       >
         <AppShell.Navbar p="md">
@@ -820,7 +840,7 @@ export function App() {
             </div>
           </div>
         </AppShell.Main>
-        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} /></AppShell.Aside> : null}
+        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} /></AppShell.Aside> : null}
 
       </AppShell>
 
@@ -864,7 +884,7 @@ export function App() {
           </ScrollArea>
         </Drawer>
 
-      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
+      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
 
       {groupEditor ? <GroupEditor initial={groupEditor === "new" ? undefined : groupEditor} bots={conversations} onBotCreated={(bot) => setConversations((prev) => [bot, ...prev.filter((c) => c.id !== bot.id)])} onClose={() => setGroupEditor(null)} onSave={(group) => {
         const isNew = groupEditor === "new";

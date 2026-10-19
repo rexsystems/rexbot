@@ -7,6 +7,8 @@ import type {
   UploadMeta,
   ComputerStatus,
   ComputerResult,
+  ComputerSession,
+  ComputerSessionState,
   MessageReaction,
   ReactionEmoji,
   BotProfile,
@@ -30,7 +32,11 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 export const computerStatus = () => json<ComputerStatus>("/computer");
 export const startComputer = () => json<ComputerStatus>("/computer/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 export const stopComputer = () => json<ComputerStatus>("/computer/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-export const execComputer = (command: string) => json<ComputerResult>("/computer/exec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command }) });
+export const execComputer = (command: string, botId?: string) => json<ComputerResult>("/computer/exec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command, botId }) });
+export const computerSession = (botId: string) => json<ComputerSession>(`/computer/session/${encodeURIComponent(botId)}`);
+export const computerSessionState = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/state`);
+export const unlockComputerSession = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/unlock`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+export const computerViewUrl = (viewPath: string) => `${API_BASE}${viewPath}`;
 export const reactToMessage = (id: string, emoji: ReactionEmoji) => json<{ reactions: MessageReaction[] }>(`/messages/${encodeURIComponent(id)}/reactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emoji }) });
 
 export function listConversations() {

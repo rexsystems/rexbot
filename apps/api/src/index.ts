@@ -1,3 +1,4 @@
+import "./env.js";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -18,9 +19,14 @@ import { botRoutes } from "./routes/bots.js";
 import { groupRoutes } from "./routes/groups.js";
 import { activeChats } from "./groups.js";
 import { voiceRoutes } from "./routes/voice.js";
+import type { Server } from "node:http";
+import { computer, isDesktopComputer } from "./computer.js";
+import { attachVncProxy } from "./computer/vncProxy.js";
 
 const app = new Hono();
-const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost", ...(process.env.REX_WEB_ORIGIN ? [process.env.REX_WEB_ORIGIN] : [])];
+const port = Number(process.env.PORT || 8787);
+// The API's own origins load the noVNC page shown inside the computer panel.
+const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost", `http://localhost:${port}`, `http://127.0.0.1:${port}`, ...(process.env.REX_WEB_ORIGIN ? [process.env.REX_WEB_ORIGIN] : [])];
 
 app.use("*", async (c, next) => {
   const origin = c.req.header("Origin");
@@ -82,6 +88,9 @@ app.post("/messages/:id/reactions", async (c) => {
   return c.json({ reactions: setReaction(id, "user", body.emoji, true) });
 });
 
-const port = Number(process.env.PORT || 8787);
 console.log(`Rex API listening on http://localhost:${port}`);
-serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
+const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
+if (isDesktopComputer(computer)) {
+  const desktop = computer;
+  attachVncProxy(server as Server, (token) => desktop.resolveView(token), () => allowedOrigins);
+}

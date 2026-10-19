@@ -1,0 +1,342 @@
+#!/usr/bin/env python3
+"""Per-bot screens on the shared Rex Computer VM.
+
+Invoked by the Rex API over SSH, one subcommand per call. Each bot gets its own
+Xvfb display with Openbox, tint2, x11vnc and websockify bound to localhost.
+State lives in /var/lib/rex-sessiond and is cleared at boot by `reset`.
+"""
+import fcntl
+import json
+import os
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+
+STATE_DIR = os.environ.get("REX_SESSIOND_STATE", "/var/lib/rex-sessiond")
+STATE_FILE = os.path.join(STATE_DIR, "state.json")
+LOCK_FILE = os.path.join(STATE_DIR, "lock")
+WORKSPACE = os.environ.get("REX_WORKSPACE", "/workspace")
+NOVNC_WEB = os.environ.get("REX_NOVNC_WEB", "/usr/share/novnc")
+MAX_SLOTS = int(os.environ.get("REX_MAX_SCREENS", "8"))
+WIDTH, HEIGHT = 1280, 800
+# Long enough for apt installs and similar work bots do with sudo.
+EXEC_TIMEOUT = 300
+OUTPUT_LIMIT = 32000
+BOT_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+OWNER = "owner"
+
+
+def fail(message, code=2):
+    print(message, file=sys.stderr)
+    sys.exit(code)
+
+
+def bot_id(value):
+    if not value or not BOT_ID.match(value):
+        fail("invalid bot id")
+    return value
+
+
+class State:
+    """Exclusive access to the session table for the duration of one command."""
+
+    def __enter__(self):
+        os.makedirs(STATE_DIR, exist_ok=True)
+        self.lock = open(LOCK_FILE, "a+")
+        fcntl.flock(self.lock, fcntl.LOCK_EX)
+        try:
+            with open(STATE_FILE) as handle:
+                self.data = json.load(handle)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.data = {"sessions": {}}
+        return self
+
+    def save(self):
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w") as handle:
+            json.dump(self.data, handle)
+        os.replace(tmp, STATE_FILE)
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.lock, fcntl.LOCK_UN)
+        self.lock.close()
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, TypeError):
+        return False
+
+
+def kill_session(session):
+    for pid in reversed(session.get("pids", [])):
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except OSError:
+            pass
+    time.sleep(0.3)
+    for pid in session.get("pids", []):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    display = session.get("display", "")
+    if display.startswith(":"):
+        num = display[1:]
+        for path in (f"/tmp/.X{num}-lock", f"/tmp/.X11-unix/X{num}"):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+
+def session_alive(session):
+    return bool(session.get("pids")) and all(alive(pid) for pid in session["pids"])
+
+
+def bot_dir(bot):
+    path = os.path.join(WORKSPACE, "shared") if bot == OWNER else os.path.join(WORKSPACE, "bots", bot)
+    os.makedirs(path, exist_ok=True)
+    if bot != OWNER:
+        link = os.path.join(path, "shared")
+        if not os.path.lexists(link):
+            os.symlink(os.path.join(WORKSPACE, "shared"), link)
+    return path
+
+
+def spawn(args, env):
+    return subprocess.Popen(args, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, start_new_session=True).pid
+
+
+def wait_for_display(display, timeout=8.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if os.path.exists(f"/tmp/.X11-unix/X{display[1:]}"):
+            return True
+        time.sleep(0.1)
+    return False
+
+
+def start_session(bot, slot):
+    display = f":{10 + slot}"
+    vnc_port = 5900 + slot
+    ws_port = 6080 + slot
+    home = bot_dir(bot)
+    env = {**os.environ, "DISPLAY": display, "HOME": home, "REX_BOT_ID": bot}
+    kill_session({"display": display, "pids": []})
+    pids = [spawn(["Xvfb", display, "-screen", "0", f"{WIDTH}x{HEIGHT}x24", "-nolisten", "tcp", "-dpi", "96"], env)]
+    if not wait_for_display(display):
+        kill_session({"display": display, "pids": pids})
+        fail("Xvfb did not start", 3)
+    subprocess.run(["xsetroot", "-solid", "#1b1915"], env=env, check=False)
+    pids.append(spawn(["openbox"], env))
+    pids.append(spawn(["tint2"], env))
+    pids.append(spawn(["x11vnc", "-display", display, "-rfbport", str(vnc_port), "-localhost", "-forever",
+                       "-shared", "-nopw", "-quiet", "-noxdamage", "-xkb"], env))
+    pids.append(spawn(["websockify", "--web", NOVNC_WEB, f"127.0.0.1:{ws_port}", f"127.0.0.1:{vnc_port}"], env))
+    time.sleep(0.6)
+    return {"botId": bot, "slot": slot, "display": display, "vncPort": vnc_port, "wsPort": ws_port,
+            "width": WIDTH, "height": HEIGHT, "locked": False, "pids": pids, "lastUsed": time.time()}
+
+
+def public(session):
+    return {key: session[key] for key in ("botId", "slot", "display", "wsPort", "width", "height", "locked")}
+
+
+def ensure(bot):
+    with State() as state:
+        sessions = state.data["sessions"]
+        current = sessions.get(bot)
+        if current and session_alive(current):
+            current["lastUsed"] = time.time()
+            state.save()
+            return current
+        if current:
+            kill_session(current)
+            del sessions[bot]
+        used = {session["slot"] for session in sessions.values()}
+        free = [slot for slot in range(MAX_SLOTS) if slot not in used]
+        if not free:
+            idle = sorted((s for s in sessions.values() if not s.get("locked")), key=lambda s: s.get("lastUsed", 0))
+            if not idle:
+                fail("every screen is busy; try again shortly", 4)
+            victim = idle[0]
+            kill_session(victim)
+            del sessions[victim["botId"]]
+            free = [victim["slot"]]
+        session = start_session(bot, free[0])
+        sessions[bot] = session
+        state.save()
+        return session
+
+
+def get_session(bot):
+    with State() as state:
+        session = state.data["sessions"].get(bot)
+        return session if session and session_alive(session) else None
+
+
+def x11vnc_remote(display, command):
+    subprocess.run(["x11vnc", "-display", display, "-R", command], stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, timeout=10, check=False)
+
+
+def set_lock(bot, locked):
+    with State() as state:
+        session = state.data["sessions"].get(bot)
+        if session and session_alive(session):
+            x11vnc_remote(session["display"], "viewonly" if locked else "noviewonly")
+            session["locked"] = locked
+            state.save()
+    print(json.dumps({"botId": bot, "locked": locked}))
+
+
+def run_exec(bot):
+    command = sys.stdin.read()
+    if not command.strip() or len(command) > 8000 or "\0" in command:
+        fail("command must contain 1 to 8000 characters")
+    session = get_session(bot) if bot != OWNER else None
+    home = bot_dir(bot)
+    env = {
+        **os.environ,
+        "HOME": home,
+        "REX_BOT_ID": bot,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "DEBIAN_FRONTEND": "noninteractive",
+    }
+    if session:
+        env["DISPLAY"] = session["display"]
+    else:
+        env.pop("DISPLAY", None)
+    proc = subprocess.run(["timeout", "--kill-after=5", str(EXEC_TIMEOUT), "bash", "-lc", command], cwd=home, env=env,
+                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    sys.stdout.write(proc.stdout.decode("utf-8", "replace")[:OUTPUT_LIMIT])
+    sys.exit(proc.returncode)
+
+
+def xdo(display, *args):
+    return subprocess.run(["xdotool", *args], env={**os.environ, "DISPLAY": display}, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, timeout=30, check=False)
+
+
+def run_input(bot):
+    session = get_session(bot)
+    if not session:
+        fail("no screen for this bot; call ensure first", 4)
+    try:
+        action = json.loads(sys.stdin.read())
+    except json.JSONDecodeError:
+        fail("input must be JSON")
+    display = session["display"]
+    kind = action.get("action")
+    x, y = action.get("x"), action.get("y")
+    steps = []
+    if x is not None and y is not None and kind in ("move", "click", "double_click", "right_click"):
+        steps.append(["mousemove", "--sync", str(int(x)), str(int(y))])
+    if kind == "click":
+        steps.append(["click", "1"])
+    elif kind == "double_click":
+        steps.append(["click", "--repeat", "2", "--delay", "80", "1"])
+    elif kind == "right_click":
+        steps.append(["click", "3"])
+    elif kind == "type":
+        steps.append(["type", "--delay", "12", "--", str(action.get("text", ""))])
+    elif kind == "key":
+        steps.append(["key", "--clearmodifiers", "--", *str(action.get("keys", "")).split()])
+    elif kind == "scroll":
+        button = "4" if action.get("direction") == "up" else "5"
+        steps.append(["click", "--repeat", str(int(action.get("amount", 3))), "--delay", "40", button])
+    elif kind != "move":
+        fail("unknown action")
+    for step in steps:
+        result = xdo(display, *step)
+        if result.returncode != 0:
+            fail(result.stdout.decode("utf-8", "replace") or "xdotool failed", 5)
+    location = xdo(display, "getmouselocation").stdout.decode("utf-8", "replace").strip()
+    print(f"{kind} done · pointer {location}")
+
+
+def run_screenshot(bot):
+    session = get_session(bot)
+    if not session:
+        fail("no screen for this bot; call ensure first", 4)
+    display = session["display"]
+    folder = os.path.join(bot_dir(bot), "screenshots")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, time.strftime("%Y%m%d-%H%M%S") + ".png")
+    env = {**os.environ, "DISPLAY": display}
+    subprocess.run(["import", "-window", "root", path], env=env, timeout=20, check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    active = xdo(display, "getactivewindow", "getwindowname").stdout.decode("utf-8", "replace").strip()
+    listing = subprocess.run(["wmctrl", "-l"], env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             timeout=10, check=False).stdout.decode("utf-8", "replace")
+    windows = [line.split(None, 3)[3] for line in listing.splitlines() if len(line.split(None, 3)) == 4]
+    print(json.dumps({"path": path if os.path.exists(path) else None, "width": session["width"],
+                      "height": session["height"], "activeWindow": active or None, "windows": windows[:40]}))
+
+
+def status():
+    with State() as state:
+        sessions = [{**public(s), "alive": session_alive(s)} for s in state.data["sessions"].values()]
+    print(json.dumps({"sessions": sessions, "maxScreens": MAX_SLOTS}))
+
+
+def release(bot):
+    with State() as state:
+        session = state.data["sessions"].pop(bot, None)
+        if session:
+            kill_session(session)
+        state.save()
+    print(json.dumps({"botId": bot, "released": bool(session)}))
+
+
+def reset():
+    with State() as state:
+        for session in state.data["sessions"].values():
+            kill_session(session)
+        state.data = {"sessions": {}}
+        state.save()
+    print("ok")
+
+
+def main():
+    if len(sys.argv) < 2:
+        fail("usage: rex-sessiond ping|status|reset|ensure|release|lock|unlock|exec|input|screenshot [bot-id]")
+    command, arg = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else None)
+    if command == "ping":
+        missing = [tool for tool in ("Xvfb", "openbox", "x11vnc", "websockify", "xdotool") if not shutil.which(tool)]
+        print("ok" if not missing else "missing " + " ".join(missing))
+        sys.exit(0 if not missing else 6)
+    if command == "status":
+        return status()
+    if command == "reset":
+        return reset()
+    bot = bot_id(arg)
+    if command == "exec":
+        return run_exec(bot)
+    if bot == OWNER:
+        fail("the owner session has no screen")
+    if command == "ensure":
+        print(json.dumps(public(ensure(bot))))
+    elif command == "release":
+        release(bot)
+    elif command == "lock":
+        set_lock(bot, True)
+    elif command == "unlock":
+        set_lock(bot, False)
+    elif command == "input":
+        run_input(bot)
+    elif command == "screenshot":
+        run_screenshot(bot)
+    else:
+        fail(f"unknown command {command}")
+
+
+if __name__ == "__main__":
+    main()

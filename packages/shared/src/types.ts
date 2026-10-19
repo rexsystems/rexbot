@@ -27,12 +27,47 @@ export interface MessageReaction {
   emoji: ReactionEmoji;
 }
 
+export type ComputerBackendKind = "podman" | "proxmox";
+
 export interface ComputerStatus {
   available: boolean;
   running: boolean;
   busy: boolean;
   imageReady: boolean;
   detail: string;
+  backend?: ComputerBackendKind;
+  /** True when bots get their own screens and mouse/keyboard tools. */
+  desktop?: boolean;
+  /** Proxmox power state of the VM, e.g. "running" or "stopped". */
+  vmState?: string;
+  /** Guest session manager answered over SSH. */
+  guestReady?: boolean;
+}
+
+export interface ComputerSessionState {
+  botId: string;
+  locked: boolean;
+}
+
+export interface ComputerSession extends ComputerSessionState {
+  slot: number;
+  display: string;
+  width: number;
+  height: number;
+  /** API-relative noVNC page for this bot's screen. */
+  viewPath: string;
+}
+
+export const COMPUTER_INPUT_ACTIONS = ["move", "click", "double_click", "right_click", "type", "key", "scroll"] as const;
+export type ComputerInputActionName = (typeof COMPUTER_INPUT_ACTIONS)[number];
+export interface ComputerInputAction {
+  action: ComputerInputActionName;
+  x?: number;
+  y?: number;
+  text?: string;
+  keys?: string;
+  direction?: "up" | "down";
+  amount?: number;
 }
 
 export interface ComputerResult {
@@ -134,7 +169,7 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "react_message" | "message_bot" | "end_call";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call";
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";

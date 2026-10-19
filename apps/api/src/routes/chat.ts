@@ -30,6 +30,7 @@ import {
   type LlmToolCall,
 } from "../llm.js";
 import { runTool } from "../tools/index.js";
+import { computer } from "../computer.js";
 import { db } from "../db.js";
 import { messageUploads } from "../uploads.js";
 import { activeChats, peers, selectGroupResponders } from "../groups.js";
@@ -135,10 +136,10 @@ chatRoutes.post("/chat", async (c) => {
         const speaker = responder.bot ? { botId: responder.id, botName: responder.bot.name } : {};
         if (speaker.botId && speaker.botName) send({ type: "speaker", botId: speaker.botId, botName: speaker.botName });
         const roster = peers(responder.id, conv.kind === "group" ? conv.id : undefined);
-        const tools = toOpenAiTools().filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
+        const tools = toOpenAiTools({ desktop: computer.desktop }).filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
         const groupContext = conv.kind === "group" ? `\nYou are in group ${JSON.stringify(conv.title)}. You were selected to answer this message. Speak only for yourself, without a speaker label. Other members' prior replies are labelled for context. Build on useful work, check claims, and avoid repeating answers. Use message_bot for a specific teammate's private help when useful; do not invent replies on their behalf. ${responders.length > 1 ? "The user explicitly requested everyone; you each get one turn, in order." : "Only one member is replying publicly to this message."}` : "";
         const llmMessages: LlmMessage[] = [
-          { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot)}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.` },
+          { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot, { desktop: computer.desktop })}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.` },
           ...historyToLlm(listMessages(conv.id), settings, responder.id),
         ];
         let assistantText = "";
@@ -251,9 +252,10 @@ chatRoutes.post("/chat", async (c) => {
               else {
                 const result = safeParse(output) as { exitCode?: number; timedOut?: boolean } | null;
                 if (!result || typeof result.exitCode !== "number") toolError = output;
-                else if (result.exitCode !== 0) toolError = result.timedOut ? "Command timed out; computer stopped." : `Command exited with code ${result.exitCode}.`;
+                else if (result.exitCode !== 0) toolError = result.timedOut ? (computer.kind === "podman" ? "Command timed out; computer stopped." : "Command timed out.") : `Command exited with code ${result.exitCode}.`;
               }
             }
+            if ((call.function.name === "computer_input" || call.function.name === "computer_screenshot") && /^computer_\w+ (failed|unavailable)/.test(output)) toolError = output;
             send({
               type: "tool_end",
               tool: call.function.name,

@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 import type { ComputerResult, ComputerStatus } from "@rex/shared";
+import { ProxmoxComputer } from "./computer/proxmox.js";
+import { PveClient, pveConfigFromEnv } from "./computer/pve.js";
+import { sshConfigFromEnv, sshRunner, tunnelOpener } from "./computer/ssh.js";
 
 const IMAGE = "docker.io/library/python:3.13-alpine";
 const LABEL = "app.rex.computer";
@@ -20,6 +23,8 @@ function podman(args: string[], timeout = 15_000): Promise<{ code: number; outpu
 }
 
 export class RexComputer {
+  readonly kind = "podman" as const;
+  readonly desktop = false;
   private busy = false;
   private changing = false;
   constructor(private readonly name = "rex-computer-v1") {}
@@ -37,12 +42,12 @@ export class RexComputer {
       const info = await podman(["info", "--format", "json"]);
       const host = info.code === 0 ? JSON.parse(info.output).host : null;
       if (!host?.security?.rootless || !host?.security?.seccompEnabled || host?.cgroupVersion !== "v2") {
-        return { available: false, running: false, busy: false, imageReady: false, detail: "Rootless Podman with seccomp and cgroup v2 is required. On Fedora: sudo dnf install podman" };
+        return { backend: this.kind, desktop: false, available: false, running: false, busy: false, imageReady: false, detail: "Rootless Podman with seccomp and cgroup v2 is required. On Fedora: sudo dnf install podman" };
       }
       const [container, image] = await Promise.all([this.inspect(), podman(["image", "exists", IMAGE])]);
-      return { available: true, running: Boolean(container?.State?.Running), busy: this.busy || this.changing, imageReady: image.code === 0, detail: "Python 3 · Alpine Linux · no network · temporary workspace" };
+      return { backend: this.kind, desktop: false, available: true, running: Boolean(container?.State?.Running), busy: this.busy || this.changing, imageReady: image.code === 0, detail: "Python 3 · Alpine Linux · no network · temporary workspace" };
     } catch (err) {
-      return { available: false, running: false, busy: false, imageReady: false, detail: err instanceof Error ? err.message : String(err) };
+      return { backend: this.kind, desktop: false, available: false, running: false, busy: false, imageReady: false, detail: err instanceof Error ? err.message : String(err) };
     }
   }
 
@@ -84,7 +89,7 @@ export class RexComputer {
     return this.status();
   }
 
-  async execute(command: string): Promise<ComputerResult> {
+  async execute(command: string, _botId?: string): Promise<ComputerResult> {
     if (typeof command !== "string" || !command.trim() || command.length > 8_000 || command.includes("\0")) throw new Error("Command must contain 1 to 8000 characters.");
     if (this.busy || this.changing) throw new Error("Rex Computer is busy.");
     this.busy = true;
@@ -99,4 +104,41 @@ export class RexComputer {
   }
 }
 
-export const computer = new RexComputer(process.env.REX_COMPUTER_NAME || "rex-computer-v1");
+/** Stands in when the configured backend cannot be built, so the API still starts and explains why. */
+export class UnavailableComputer {
+  readonly kind = "proxmox" as const;
+  readonly desktop = false;
+  constructor(private readonly reason: string) {}
+  async status(): Promise<ComputerStatus> {
+    return { backend: this.kind, desktop: false, available: false, running: false, busy: false, imageReady: false, detail: this.reason };
+  }
+  async start(): Promise<ComputerStatus> { throw new Error(this.reason); }
+  async stop(): Promise<ComputerStatus> { throw new Error(this.reason); }
+  async execute(_command: string, _botId?: string): Promise<ComputerResult> { throw new Error(this.reason); }
+}
+
+export type ComputerBackend = RexComputer | ProxmoxComputer | UnavailableComputer;
+
+export function isDesktopComputer(backend: ComputerBackend): backend is ProxmoxComputer {
+  return backend instanceof ProxmoxComputer;
+}
+
+function proxmoxFromEnv(env: NodeJS.ProcessEnv): ProxmoxComputer {
+  const pveConfig = pveConfigFromEnv(env);
+  if (!pveConfig) throw new Error("REX_COMPUTER_BACKEND=proxmox needs REX_PROXMOX_URL.");
+  const sshConfig = sshConfigFromEnv(env);
+  const tunnelBasePort = Number(env.REX_COMPUTER_TUNNEL_PORT || 46080);
+  return new ProxmoxComputer(new PveClient(pveConfig), sshRunner(sshConfig), tunnelOpener(sshConfig), { tunnelBasePort });
+}
+
+export function createComputer(env: NodeJS.ProcessEnv = process.env): ComputerBackend {
+  const backend = env.REX_COMPUTER_BACKEND?.trim() || (env.REX_PROXMOX_URL?.trim() ? "proxmox" : "podman");
+  if (backend === "proxmox") {
+    try { return proxmoxFromEnv(env); }
+    catch (error) { return new UnavailableComputer(error instanceof Error ? error.message : String(error)); }
+  }
+  if (backend !== "podman") throw new Error(`Unknown REX_COMPUTER_BACKEND ${JSON.stringify(backend)}. Use podman or proxmox.`);
+  return new RexComputer(env.REX_COMPUTER_NAME || "rex-computer-v1");
+}
+
+export const computer: ComputerBackend = createComputer();
