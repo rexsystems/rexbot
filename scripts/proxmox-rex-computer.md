@@ -2,70 +2,30 @@
 
 One Debian VM, named `rex-computer`, shared by every bot. Each bot gets its own 1280×800 screen (Xvfb + Openbox + tint2), a private folder `/workspace/bots/<bot id>`, and the shared folder `/workspace/shared`. The Rex API talks to Proxmox only to check and start that one VM, and to the guest over SSH for everything else. noVNC is bound to localhost inside the VM and reaches your browser through an SSH tunnel and the Rex API, so nothing new is exposed on your LAN.
 
-The steps below create one new VM. They never modify, stop, or delete your other VMs: `create-vm.sh` refuses to run if the VMID or the name `rex-computer` already exists, the API token only gets rights on that VMID, and the API refuses to act on a VM with a different name.
+## Lazy path (recommended)
 
-## 1. SSH key on the Rex host
+1. Once, so Rex can talk to Proxmox as root: `ssh-copy-id root@192.168.100.25`  
+   Or install `sshpass` and paste the root password in the panel.
+2. Start Rex (`pnpm dev`), open the computer panel, expand **Set up Proxmox desktop**.
+3. Fill host (`192.168.100.25`), node (`pve`), a free VMID, and a static guest IP (example: `ip=192.168.100.50/24,gw=192.168.100.1`).
+4. Click **Create rex-computer and wire Rex**. Sit back.
 
-```bash
-ssh-keygen -t ed25519 -f ~/.ssh/rex_computer -N "" -C rex-computer
-scp ~/.ssh/rex_computer.pub root@192.168.100.25:/root/rex_computer.pub
-```
+That call hits `POST /computer/bootstrap` on the local API. It generates `~/.ssh/rex_computer` if needed, creates only a new VM named `rex-computer`, makes a token limited to that VMID, runs `install-guest.sh`, writes the Proxmox block into `.env`, and hot-swaps the computer backend. No restart. Other VMs are never touched: the script refuses an existing VMID or an existing `rex-computer` name.
 
-## 2. Create the VM (on the Proxmox host, as root)
+## Manual path
 
-Pick a free VMID (check the Proxmox UI). Copy `scripts/proxmox/create-vm.sh` to the host and run it:
+If you prefer the steps by hand:
 
-```bash
-scp scripts/proxmox/create-vm.sh root@192.168.100.25:/root/
-ssh root@192.168.100.25
-VMID=180 SSH_KEY_FILE=/root/rex_computer.pub bash /root/create-vm.sh
-```
-
-Optional variables: `STORAGE` (default `local-lvm`), `BRIDGE` (`vmbr0`), `MEMORY` (`4096`), `CORES` (`2`), `DISK` (`32G`), and `IPCONFIG` for a static address, e.g. `IPCONFIG=ip=192.168.100.50/24,gw=192.168.100.1`. A static address is easiest, because the API needs it.
-
-## 3. API token with rights on that VM only
-
-Still on the Proxmox host:
-
-```bash
-pveum role add RexComputer -privs "VM.Audit VM.PowerMgmt"
-pveum user add rex@pve
-pveum aclmod /vms/180 -user rex@pve -role RexComputer
-pveum user token add rex@pve rex --privsep 0
-```
-
-Keep the printed secret. `VM.Audit` lets Rex read the VM's name and state; `VM.PowerMgmt` lets it start and shut down that VM. Nothing else.
-
-## 4. Provision the guest (from the Rex host)
-
-Wait until the VM has booted, then:
-
-```bash
-scripts/proxmox/install-guest.sh 192.168.100.50 ~/.ssh/rex_computer
-```
-
-It installs the desktop pieces, `rex-sessiond`, and the workspace folders, then prints `rex-sessiond: ok`. The `rex` user gets passwordless sudo so bots can `sudo apt-get install -y …` and set the machine up themselves.
-
-## 5. Point Rex at it
-
-Add to the repository's `.env` (the API loads it at start; exported shell variables win):
-
-```bash
-REX_COMPUTER_BACKEND=proxmox
-REX_PROXMOX_URL=https://192.168.100.25:8006
-REX_PROXMOX_NODE=pve
-REX_PROXMOX_VMID=180
-REX_PROXMOX_TOKEN_ID=rex@pve!rex
-REX_PROXMOX_TOKEN_SECRET=paste-the-secret
-# Proxmox uses a self-signed certificate by default. Either trust it:
-REX_PROXMOX_INSECURE_TLS=1
-# or point at its CA: REX_PROXMOX_CA_FILE=/path/to/pve-root-ca.pem
-REX_COMPUTER_SSH_HOST=192.168.100.50
-REX_COMPUTER_SSH_USER=rex
-REX_COMPUTER_SSH_KEY=~/.ssh/rex_computer
-```
-
-`REX_PROXMOX_NODE` is the node name shown in the Proxmox tree (often `pve`). Restart `pnpm dev`. The computer panel now shows the VM state and, once it is up, the active bot's screen.
+1. `ssh-keygen -t ed25519 -f ~/.ssh/rex_computer -N "" -C rex-computer`
+2. On Proxmox as root: copy `scripts/proxmox/create-vm.sh`, then  
+   `VMID=180 SSH_KEY_FILE=/root/rex_computer.pub IPCONFIG=ip=192.168.100.50/24,gw=192.168.100.1 bash /root/create-vm.sh`
+3. Token:  
+   `pveum role add RexComputer -privs "VM.Audit,VM.PowerMgmt"`  
+   `pveum user add rex@pve`  
+   `pveum aclmod /vms/180 -user rex@pve -role RexComputer`  
+   `pveum user token add rex@pve rex --privsep 0`
+4. From the Rex host: `scripts/proxmox/install-guest.sh 192.168.100.50 ~/.ssh/rex_computer`
+5. Put the `REX_PROXMOX_*` / `REX_COMPUTER_SSH_*` vars in `.env` (see `.env.example`) and restart the API.
 
 ## How it behaves
 

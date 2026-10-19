@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { computer, isDesktopComputer } from "../computer.js";
+import { BootstrapBusyError, bootstrapComputer, type BootstrapRequest } from "../computer/bootstrap.js";
 import { proxyVncHttp } from "../computer/vncProxy.js";
 import { getConversation } from "../conversations.js";
 
@@ -14,6 +15,28 @@ function knownBot(id: string) {
 
 export const computerRoutes = new Hono();
 computerRoutes.get("/computer", async (c) => c.json(await computer.status()));
+
+/** One-shot Proxmox setup. Bound to localhost only (see index.ts). Password is never written to disk. */
+computerRoutes.post("/computer/bootstrap", async (c) => {
+  let body: BootstrapRequest;
+  try { body = await c.req.json() as BootstrapRequest; }
+  catch { return c.json({ error: "Invalid JSON" }, 400); }
+  try {
+    const result = await bootstrapComputer(body);
+    return c.json({
+      ok: true,
+      vmid: result.vmid,
+      guestIp: result.guestIp,
+      tokenId: result.tokenId,
+      envPath: result.envPath,
+      status: result.status,
+      log: result.log,
+    });
+  } catch (err) {
+    const status = err instanceof BootstrapBusyError ? 409 : 400;
+    return c.json({ error: errorMessage(err) }, status);
+  }
+});
 
 computerRoutes.get("/computer/vnc/:token/*", (c) => {
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);

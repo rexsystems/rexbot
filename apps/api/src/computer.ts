@@ -141,4 +141,9 @@ export function createComputer(env: NodeJS.ProcessEnv = process.env): ComputerBa
   return new RexComputer(env.REX_COMPUTER_NAME || "rex-computer-v1");
 }
 
-export const computer: ComputerBackend = createComputer();
+export let computer: ComputerBackend = createComputer();
+
+/** Hot-swap after /computer/bootstrap so the API does not need a restart. */
+export function replaceComputer(next: ComputerBackend) {
+  computer = next;
+}

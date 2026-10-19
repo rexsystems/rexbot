@@ -90,7 +90,5 @@ app.post("/messages/:id/reactions", async (c) => {
 
 console.log(`Rex API listening on http://localhost:${port}`);
 const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
-if (isDesktopComputer(computer)) {
-  const desktop = computer;
-  attachVncProxy(server as Server, (token) => desktop.resolveView(token), () => allowedOrigins);
-}
+// Resolve through the live binding so /computer/bootstrap can hot-swap the backend.
+attachVncProxy(server as Server, (token) => (isDesktopComputer(computer) ? computer.resolveView(token) : null), () => allowedOrigins);

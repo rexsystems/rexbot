@@ -840,7 +840,7 @@ export function App() {
             </div>
           </div>
         </AppShell.Main>
-        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} /></AppShell.Aside> : null}
+        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></AppShell.Aside> : null}
 
       </AppShell>
 
@@ -884,7 +884,7 @@ export function App() {
           </ScrollArea>
         </Drawer>
 
-      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
+      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
 
       {groupEditor ? <GroupEditor initial={groupEditor === "new" ? undefined : groupEditor} bots={conversations} onBotCreated={(bot) => setConversations((prev) => [bot, ...prev.filter((c) => c.id !== bot.id)])} onClose={() => setGroupEditor(null)} onSave={(group) => {
         const isNew = groupEditor === "new";

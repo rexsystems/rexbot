@@ -74,7 +74,7 @@ Rex Computer has two backends. **Podman** (the default) is an offline Python and
 
 ### Proxmox desktop
 
-Follow [scripts/proxmox-rex-computer.md](scripts/proxmox-rex-computer.md) to create the `rex-computer` VM, a token limited to that VM, and the `.env` settings. Rex never acts on a VM with a different name.
+Open the computer panel → **Set up Proxmox desktop**, or call `POST /computer/bootstrap`. Rex creates the `rex-computer` VM, a token limited to that VM, provisions the guest, and writes `.env`. Details: [scripts/proxmox-rex-computer.md](scripts/proxmox-rex-computer.md). Rex never acts on a VM with a different name.
 
 - Every bot gets its own 1280×800 screen (Openbox and a taskbar) on the same VM. The computer panel shows the current bot's screen; in a group, pick a member's screen.
 - Bots get `computer_exec` (bash as `rex` in `/workspace/bots/<bot>`, with `DISPLAY` and passwordless sudo so they can `apt install` and set things up), `computer_input` (move, click, type, key combos, scroll), and `computer_screenshot` (saves a PNG and lists open windows; the model does not see pixels).

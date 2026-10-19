@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActionIcon, Alert, Badge, Button, Group, Loader, ScrollArea, Select, Stack, Text, Textarea } from "@mantine/core";
+import { ActionIcon, Alert, Badge, Button, Group, Loader, NumberInput, PasswordInput, ScrollArea, Select, Stack, Text, Textarea, TextInput } from "@mantine/core";
 import type { ComputerResult, ComputerSession, ComputerStatus } from "@rex/shared";
 import * as api from "./api";
 import { IconCollapse, IconComputer, IconPlay, IconRefresh, IconStop, IconTool } from "./icons";
@@ -20,13 +20,17 @@ function ResultList({ results, timeoutNote }: { results: ComputerResult[]; timeo
   );
 }
 
-export function ComputerPanel({ onClose, active, bots, focusBotId }: { onClose: () => void; active: boolean; bots: ComputerBot[]; focusBotId?: string }) {
+export function ComputerPanel({ onClose, active, bots, focusBotId, onStatus }: { onClose: () => void; active: boolean; bots: ComputerBot[]; focusBotId?: string; onStatus?: (status: ComputerStatus) => void }) {
   const [status, setStatus] = useState<ComputerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    try { setStatus(await api.computerStatus()); setError((old) => old?.startsWith("Status:") ? null : old); }
-    catch (err) { setError(`Status: ${errorText(err)}`); }
+    try {
+      const next = await api.computerStatus();
+      setStatus(next);
+      onStatus?.(next);
+      setError((old) => old?.startsWith("Status:") ? null : old);
+    } catch (err) { setError(`Status: ${errorText(err)}`); }
   }
   useEffect(() => {
     if (!active) return;
@@ -39,7 +43,7 @@ export function ComputerPanel({ onClose, active, bots, focusBotId }: { onClose: 
     <section className="computer-panel" aria-label="Rex Computer">
       <Group className="computer-panel-heading" justify="space-between" wrap="nowrap"><Group gap="sm" wrap="nowrap"><IconComputer size={30} /><Text component="h2" fw={600} size="lg" m={0}>Rex Computer</Text></Group><ActionIcon aria-label="Close computer" title="Collapse computer" size={44} variant="subtle" onClick={onClose}><IconCollapse /></ActionIcon></Group>
       <ScrollArea className="computer-panel-scroll" offsetScrollbars>
-        {status?.backend === "proxmox"
+        {status?.desktop
           ? <DesktopBody status={status} error={error} setError={setError} refresh={refresh} active={active} bots={bots} focusBotId={focusBotId} />
           : <PodmanBody status={status} error={error} setError={setError} refresh={refresh} />}
       </ScrollArea>
@@ -190,12 +194,60 @@ function PodmanBody({ status, error, setError, refresh }: BodyProps) {
         </Stack>
       </form>
       <ResultList results={results} timeoutNote="Timed out, computer stopped" />
+      <BootstrapForm onDone={refresh} />
       <details className="computer-isolation"><summary>Isolation & limits</summary><Stack gap="md"><div className="computer-specs">
         <div><Text fw={600}>512 MB RAM</Text><Text size="sm" c="dimmed">1 CPU · 64 processes</Text></div>
         <div><Text fw={600}>128 MB workspace</Text><Text size="sm" c="dimmed">Deleted when stopped</Text></div>
         <div><Text fw={600}>Offline</Text><Text size="sm" c="dimmed">No host folders or sockets</Text></div>
         <div><Text fw={600}>Rootless Podman</Text><Text size="sm" c="dimmed">Read-only OS · no capabilities</Text></div>
-      </div><Text size="sm" c="dimmed">Python 3 and shell, without a desktop or browser. Each command has a 20-second limit. The computer stops after one hour. Containers share the host kernel; this is not a virtual machine. All bots share this computer. Set up the Proxmox backend for per-bot desktops.</Text></Stack></details>
+      </div><Text size="sm" c="dimmed">Python 3 and shell, without a desktop or browser. Each command has a 20-second limit. The computer stops after one hour. Containers share the host kernel; this is not a virtual machine. All bots share this computer. Prefer the Proxmox setup above for per-bot desktops.</Text></Stack></details>
     </Stack>
+  );
+}
+
+function BootstrapForm({ onDone }: { onDone: () => Promise<void> }) {
+  const [pveHost, setPveHost] = useState("192.168.100.25");
+  const [node, setNode] = useState("pve");
+  const [vmid, setVmid] = useState<number | "">(180);
+  const [ipconfig, setIpconfig] = useState("ip=192.168.100.50/24,gw=192.168.100.1");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [log, setLog] = useState<string[]>([]);
+
+  async function submit() {
+    setError(null);
+    setPending(true);
+    setLog(["Starting… this can take a few minutes (cloud image download + apt)."]);
+    try {
+      const result = await api.bootstrapComputer({
+        pveHost,
+        node,
+        vmid: typeof vmid === "number" ? vmid : undefined,
+        ipconfig,
+        pvePassword: password || undefined,
+      });
+      setLog(result.log);
+      setPassword("");
+      await onDone();
+    } catch (err) { setError(errorText(err)); }
+    finally { setPending(false); }
+  }
+
+  return (
+    <details className="computer-isolation" open>
+      <summary>Set up Proxmox desktop (one click)</summary>
+      <Stack gap="md" mt="sm">
+        <Text size="sm" c="dimmed">Rex SSHes into Proxmox as root, creates only a new VM named rex-computer, installs the guest, writes `.env`, and switches itself over. Your other VMs are never touched. Prefer `ssh-copy-id root@proxmox` once; otherwise paste the root password (needs `sshpass` on this machine).</Text>
+        <TextInput label="Proxmox host" value={pveHost} onChange={(event) => setPveHost(event.currentTarget.value)} required />
+        <TextInput label="Node name" description="Name in the Proxmox tree" value={node} onChange={(event) => setNode(event.currentTarget.value)} required />
+        <NumberInput label="VMID" description="Must be free. Leave as-is unless you already use 180." value={vmid} onChange={(value) => setVmid(typeof value === "number" ? value : "")} min={100} allowDecimal={false} />
+        <TextInput label="Guest network" description="Static IP is easiest. Use ip=dhcp to discover via guest agent." value={ipconfig} onChange={(event) => setIpconfig(event.currentTarget.value)} />
+        <PasswordInput label="Proxmox root password" description="Optional if your SSH key already logs in as root." value={password} onChange={(event) => setPassword(event.currentTarget.value)} />
+        {error ? <Alert color="red" title="Bootstrap failed" role="alert">{error}</Alert> : null}
+        {log.length ? <div className="computer-output" aria-live="polite"><pre>{log.join("\n")}</pre></div> : null}
+        <Button loading={pending} disabled={!pveHost.trim() || !node.trim()} onClick={() => void submit()}>Create rex-computer and wire Rex</Button>
+      </Stack>
+    </details>
   );
 }
