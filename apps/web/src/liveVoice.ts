@@ -45,9 +45,16 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
   let hangupRequested = false;
   let endReason: "user" | "bot" | "error" = "user";
   let hangupTimer: ReturnType<typeof setTimeout> | undefined;
+  let hangupDeadline = 0;
   const cancelledTools = new Set<string>();
   const playing = new Set<AudioBufferSourceNode>();
   function stopPlayback() { for (const node of playing) { try { node.stop(); } catch { /* A completed source is already stopped. */ } } playing.clear(); nextPlayTime = 0; }
+  function playbackIdle() {
+    return playing.size === 0 && nextPlayTime <= audio.currentTime + 0.06;
+  }
+  function speakingNow() {
+    return playing.size > 0 || nextPlayTime > audio.currentTime + 0.06;
+  }
   function saveTurn() {
     if (!sessionId || (!userText.trim() && !assistantText.trim())) return;
     const id = sessionId;
@@ -55,13 +62,22 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
     userText = assistantText = "";
     saves = saves.then(async () => { await saveVoiceTurn(id, turn); }).catch((error) => callbacks.error(`Could not save voice transcript: ${error instanceof Error ? error.message : String(error)}`));
   }
+  function finishHangupWhenQuiet() {
+    if (!hangupRequested || closed) return;
+    if (playbackIdle() || Date.now() >= hangupDeadline) {
+      hangupTimer = setTimeout(() => { if (!closed) void stop("bot"); }, playbackIdle() ? 180 : 0);
+      return;
+    }
+    hangupTimer = setTimeout(finishHangupWhenQuiet, 80);
+  }
   function requestBotHangup() {
     hangupRequested = true;
     endReason = "bot";
     callbacks.state("Ending call");
     if (hangupTimer) clearTimeout(hangupTimer);
-    // Give a short window for a spoken goodbye, then disconnect for real.
-    hangupTimer = setTimeout(() => { if (!closed) void stop("bot"); }, 3500);
+    // Wait for queued TTS to finish instead of cutting the goodbye short.
+    hangupDeadline = Date.now() + 20_000;
+    finishHangupWhenQuiet();
   }
   function stop(reason: "user" | "bot" | "error" = "user"): Promise<void> {
     if (stopping) return stopping;
@@ -105,7 +121,10 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
     silent.gain.value = 0;
     capture.connect(silent).connect(audio.destination);
     capture.port.onmessage = (event: MessageEvent<Float32Array>) => {
-      if (ready && !muted && socket?.readyState === WebSocket.OPEN && socket.bufferedAmount < 128_000) socket.send(JSON.stringify({ realtimeInput: { audio: { data: encodePcm(event.data, audio.sampleRate), mimeType: "audio/pcm;rate=16000" } } }));
+      // Hold mic while TTS is playing so Google VAD does not barge in and cut speech short.
+      if (ready && !muted && !speakingNow() && socket?.readyState === WebSocket.OPEN && socket.bufferedAmount < 128_000) {
+        socket.send(JSON.stringify({ realtimeInput: { audio: { data: encodePcm(event.data, audio.sampleRate), mimeType: "audio/pcm;rate=16000" } } }));
+      }
     };
     socket = new WebSocket(config.url);
     const connection = socket;
@@ -148,12 +167,12 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
             playing.add(node);
             node.onended = () => {
               playing.delete(node);
-              if (!playing.size && !closed) {
-                if (hangupRequested) void stop("bot");
+              if (!closed && playbackIdle()) {
+                if (hangupRequested) finishHangupWhenQuiet();
                 else callbacks.state(muted ? "Muted" : "Listening");
               }
             };
-            nextPlayTime = Math.max(audio.currentTime + .02, nextPlayTime);
+            if (nextPlayTime < audio.currentTime + 0.04) nextPlayTime = audio.currentTime + 0.06;
             node.start(nextPlayTime);
             nextPlayTime += buffer.duration;
             callbacks.state("Speaking");
@@ -176,8 +195,8 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
           }
           if (content?.turnComplete) {
             saveTurn();
-            if (hangupRequested && !playing.size) void stop("bot");
-            else if (!playing.size) callbacks.state(muted ? "Muted" : "Listening");
+            if (hangupRequested) finishHangupWhenQuiet();
+            else if (playbackIdle()) callbacks.state(muted ? "Muted" : "Listening");
           }
           if (data.goAway) { callbacks.error("Google Live is ending this session. Start another call to continue."); void stop("error"); }
         } catch (error) {

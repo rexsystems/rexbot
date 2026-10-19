@@ -161,6 +161,7 @@ export function App() {
     ]);
     setConversations(convs);
     setMemories(mems);
+    return convs;
   }, []);
 
   useEffect(() => {
@@ -169,18 +170,29 @@ export function App() {
     );
   }, [refreshLists]);
 
+  const bots = useMemo(() => conversations.filter((conversation) => conversation.kind !== "group"), [conversations]);
+  const hasBots = bots.length > 0;
+
   useEffect(() => {
+    if (thread.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread, busy]);
 
-  const openConversation = async (id: string) => {
+  const openConversation = useCallback(async (id: string) => {
     setError(null);
     setActiveId(id);
     attachments.clear();
     const data = await api.getConversation(id);
     setThread(toThread(data.messages));
     setMobileNav(false);
-  };
+  }, [attachments]);
+
+  // Landing "create your first bot" only when there are no bots. Otherwise open one.
+  useEffect(() => {
+    if (activeId || botEditor || !hasBots) return;
+    const first = bots[0]!;
+    void openConversation(first.id).catch((error) => setError(error instanceof Error ? error.message : String(error)));
+  }, [activeId, botEditor, bots, hasBots, openConversation]);
 
   const newChat = () => {
     setActiveId(undefined);
@@ -488,8 +500,9 @@ export function App() {
               </Group>
             </Group>
 
-            <Box className="thread-scroll">
-              <Stack gap="sm">
+            <div className="chat-column">
+            <Box className={`thread-scroll${thread.length === 0 ? " thread-empty" : ""}`}>
+              <Stack gap="sm" className={thread.length === 0 ? "thread-empty-stack" : undefined}>
                 {thread.length === 0 ? (
                   <Stack className="empty-chat" align="center" justify="center" gap="lg">
                     {activeConversation?.kind === "group" ? <Group justify="center">{activeConversation.memberIds?.map((id) => <BlobAvatar key={id} seed={id} size={72} appearance={conversations.find((c) => c.id === id)?.bot} />)}</Group> : <BlobAvatar seed={activeId ?? "rex-brand"} size={132} appearance={activeBot} />}
@@ -500,9 +513,9 @@ export function App() {
                       has room to work.
                     </Title>
                       <Text c="dimmed" ta="center" maw={460} size="lg">
-                      {activeConversation?.kind === "group" ? "Use @name to ping a bot, or @everyone to hear from everyone in order. Otherwise, the first member replies." : activeId ? "Bring a question, a file, or something to figure out." : "Create a bot with its own look, then give it something to work on."}
+                      {activeConversation?.kind === "group" ? "Use @name to ping a bot, or @everyone to hear from everyone in order. Otherwise, the first member replies." : hasBots ? "Bring a question, a file, or something to figure out." : "Create a bot with its own look, then give it something to work on."}
                     </Text>
-                    <Group justify="center" gap="sm">{!activeId ? <Button leftSection={<IconBotAdd size={24} />} onClick={() => setBotEditor("new")}>Create your first bot</Button> : <Button variant="default" leftSection={<IconSearch size={24} />} onClick={() => setDraft("Search the web for ")}>Research something</Button>}<Button variant="default" leftSection={<IconComputer size={24} />} onClick={() => setShowComputer(true)}>Open Rex Computer</Button></Group>
+                    <Group justify="center" gap="sm">{!hasBots ? <Button leftSection={<IconBotAdd size={24} />} onClick={() => setBotEditor("new")}>Create your first bot</Button> : <Button variant="default" leftSection={<IconSearch size={24} />} onClick={() => setDraft("Search the web for ")}>Research something</Button>}<Button variant="default" leftSection={<IconComputer size={24} />} onClick={() => setShowComputer(true)}>Open Rex Computer</Button></Group>
                   </Stack>
                 ) : (
                   thread.map((item) => {
@@ -700,6 +713,7 @@ export function App() {
                 </Paper>
               </Stack>
             </div>
+            </div>
           </div>
         </AppShell.Main>
         {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} /></AppShell.Aside> : null}
@@ -755,7 +769,7 @@ export function App() {
         setActiveId(group.id);
         if (isNew) { setThread([]); setDraft(""); attachments.clear(); setError(null); }
       }} /> : null}
-      {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} existingNames={conversations.filter((bot) => bot.kind !== "group").map((bot) => bot.bot?.name ?? bot.title)} onClose={() => setBotEditor(null)} onSave={(bot) => {
+      {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} existingNames={conversations.filter((bot) => bot.kind !== "group").map((bot) => bot.bot?.name ?? bot.title)} existingColors={conversations.filter((bot) => bot.kind !== "group").map((bot) => bot.bot?.color ?? "")} onClose={() => setBotEditor(null)} onSave={(bot) => {
         const isNew = botEditor === "new";
         setBotEditor(null);
         setConversations((previous) => [bot, ...previous.filter((item) => item.id !== bot.id)]);
@@ -763,7 +777,15 @@ export function App() {
         if (isNew) { setThread([]); setDraft(""); attachments.clear(); setError(null); }
       }} /> : null}
 
-      {deleteTarget ? <DeleteDialog conversation={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={() => { setDeleteTarget(null); newChat(); void refreshLists().catch((err) => setError(String(err))); }} /> : null}
+      {deleteTarget ? <DeleteDialog conversation={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={() => {
+        const gone = deleteTarget.id;
+        setDeleteTarget(null);
+        void refreshLists().then((convs) => {
+          const next = convs.find((conversation) => conversation.id !== gone && conversation.kind !== "group") ?? convs.find((conversation) => conversation.id !== gone);
+          if (next) return openConversation(next.id);
+          newChat();
+        }).catch((err) => setError(String(err)));
+      }} /> : null}
       {showSettings ? (
         <SettingsModal
           initial={settings}

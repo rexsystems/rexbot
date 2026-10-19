@@ -27,8 +27,9 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 interface AvatarView {
   canvas: HTMLCanvasElement; context: CanvasRenderingContext2D; scene: THREE.Scene;
-  character: THREE.Group; eyes: THREE.Group[]; bodyMaterial: THREE.MeshLambertMaterial;
-  mouthGeometry: THREE.BufferGeometry; bot: BotProfile; visible: boolean; drawn: boolean; size: number; reduced?: boolean; lastBlink?: number;
+  character: THREE.Group; eyes: THREE.Group[]; pupils: THREE.Object3D[];
+  bodyMaterial: THREE.MeshLambertMaterial;
+  mouthGeometry: THREE.BufferGeometry; bot: BotProfile; visible: boolean; drawn: boolean; size: number; reduced?: boolean; lastPose?: string;
 }
 const views = new Set<AvatarView>();
 let frame = 0;
@@ -39,9 +40,17 @@ function draw(view: AvatarView, time: number) {
   const blinkPhase = (t % 5.2) / 5.2;
   const blink = !reduced && view.bot.blink && blinkPhase > .91 && blinkPhase < .97 ? Math.max(.045, Math.abs(blinkPhase - .94) / .03) : 1;
   const moving = !reduced && view.bot.motion !== "still";
-  if (view.drawn && !moving && view.lastBlink === blink && view.reduced === reduced) return;
+  // Drift the gaze; hold a beat so looks feel deliberate instead of constantly swimming.
+  const glance = Math.floor(t / 2.8);
+  const hold = (t % 2.8) > 2.15;
+  const wanderX = Math.sin(glance * 1.7 + .4) * Math.cos(glance * .9) * .034;
+  const wanderY = Math.sin(glance * 1.1 + 2.1) * .026;
+  const lookX = reduced ? 0 : hold ? wanderX : wanderX + Math.sin(t * 3.1) * .004;
+  const lookY = reduced ? 0 : hold ? wanderY : wanderY + Math.cos(t * 2.4) * .003;
+  const pose = `${view.bot.motion}:${blink.toFixed(2)}:${lookX.toFixed(3)}:${lookY.toFixed(3)}:${reduced}`;
+  if (view.drawn && !moving && view.lastPose === pose && view.reduced === reduced) return;
   view.reduced = reduced;
-  view.lastBlink = blink;
+  view.lastPose = pose;
   view.character.rotation.set(0, 0, 0);
   view.character.position.y = 0;
   if (!reduced) {
@@ -50,6 +59,11 @@ function draw(view: AvatarView, time: number) {
     if (view.bot.motion === "spin") view.character.rotation.y = t * .65;
   }
   for (const eye of view.eyes) eye.scale.y = blink;
+  view.pupils.forEach((pupil, index) => {
+    const side = index === 0 ? -1 : 1;
+    // Shared gaze with a tiny toe-in so both eyes look together.
+    pupil.position.set(lookX + side * .004, -.008 + lookY, .103);
+  });
   const size = view.size;
   if (view.canvas.width !== size) { view.canvas.width = view.canvas.height = size; }
   renderer.setViewport(0, 0, size, size);
@@ -92,6 +106,7 @@ export function mountAvatar(canvas: HTMLCanvasElement, bot: BotProfile) {
     return Math.sqrt(.62 ** 2 - x ** 2 - y ** 2);
   }
   const eyes: THREE.Group[] = [];
+  const pupils: THREE.Object3D[] = [];
   for (const x of [-.205, .205]) {
     const eye = new THREE.Group();
     eye.position.set(x, .12, surfaceZ(x, .12) - .018);
@@ -99,17 +114,18 @@ export function mountAvatar(canvas: HTMLCanvasElement, bot: BotProfile) {
     whiteBall.scale.set(.145, .175, .12);
     eye.add(whiteBall);
     const pupil = new THREE.Mesh(eyeGeometry, iris);
-    pupil.position.set(.018, -.008, .103);
+    pupil.position.set(0, -.008, .103);
     pupil.scale.set(.072, .095, .045);
     eye.add(pupil);
     character.add(eye);
     eyes.push(eye);
+    pupils.push(pupil);
   }
   const curve = new THREE.CatmullRomCurve3([[-.13, -.19], [-.07, -.235], [0, -.255], [.07, -.235], [.13, -.19]].map(([x, y]) => new THREE.Vector3(x!, y!, surfaceZ(x!, y!) + .018)));
   const mouthGeometry = new THREE.TubeGeometry(curve, 20, .016, 6, false);
   character.add(new THREE.Mesh(mouthGeometry, mouthMaterial));
   const pixelSize = (width: number) => Math.min(512, Math.max(32, Math.round(width * Math.min(devicePixelRatio, 2))));
-  const view: AvatarView = { canvas, context, scene, character, eyes, bodyMaterial, mouthGeometry, bot, visible: true, drawn: false, size: pixelSize(canvas.getBoundingClientRect().width) };
+  const view: AvatarView = { canvas, context, scene, character, eyes, pupils, bodyMaterial, mouthGeometry, bot, visible: true, drawn: false, size: pixelSize(canvas.getBoundingClientRect().width) };
   const resizeObserver = new ResizeObserver(([entry]) => {
     if (!entry) return;
     const size = pixelSize(entry.contentRect.width);

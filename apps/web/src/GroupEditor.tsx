@@ -34,7 +34,7 @@ export function GroupEditor({ initial, bots, onBotCreated, onClose, onSave }: { 
     finally { setPending(false); }
   }
 
-  if (creatingBot) return <BotEditor existingNames={bots.filter((bot) => !bot.kind).map((bot) => bot.bot?.name ?? bot.title)} onClose={() => setCreatingBot(false)} onSave={(bot) => { onBotCreated(bot); setMembers((prev) => [...prev, bot.id]); setCreatingBot(false); }} />;
+  if (creatingBot) return <BotEditor existingNames={bots.filter((bot) => !bot.kind).map((bot) => bot.bot?.name ?? bot.title)} existingColors={bots.filter((bot) => !bot.kind).map((bot) => bot.bot?.color ?? "")} onClose={() => setCreatingBot(false)} onSave={(bot) => { onBotCreated(bot); setMembers((prev) => [...prev, bot.id]); setCreatingBot(false); }} />;
 
   return <Modal opened onClose={onClose} title={initial ? "Group settings" : "New group"} closeButtonProps={{ "aria-label": "Close group settings" }} size="lg" centered>
     <Tabs defaultValue="members">
