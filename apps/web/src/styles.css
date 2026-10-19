@@ -3,6 +3,7 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
@@ -22,18 +23,27 @@ body {
 
 .app-shell {
   height: 100%;
+  overflow: hidden;
 }
 
 .app-shell main {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
   background: #0c0b0a;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-stage {
   display: flex;
   flex-direction: column;
-  height: 100dvh;
+  flex: 1;
   min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
   position: relative;
 }
 
@@ -41,18 +51,29 @@ body {
 .chat-column {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   width: min(880px, 100%);
   margin-inline: auto;
   padding-inline: 1.5rem;
+  overflow: hidden;
 }
 
 .thread-scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1rem 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.thread-stack {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Center the empty prompt in the space above the composer. */
@@ -113,12 +134,16 @@ body {
   align-self: flex-start;
   max-width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .md-body {
   font-size: 1.05rem;
   line-height: 1.7;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .md-body > :first-child {
@@ -216,10 +241,19 @@ body {
   padding: 0.08em 0.35em;
 }
 
-.md-pre {
+.md-code-wrap {
   margin: 0.55em 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.md-pre {
+  margin: 0;
   padding: 0.75em 0.9em;
+  max-width: 100%;
+  max-height: min(42vh, 22rem);
   overflow: auto;
+  overscroll-behavior: contain;
   background: #141311;
   border: 1px solid #2e2c27;
   border-radius: 8px;
@@ -233,6 +267,51 @@ body {
   border: none;
   padding: 0;
   white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.md-code-toggle {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  margin-top: 0.35rem;
+  padding: 0 0.55rem;
+  border: 1px solid #39352e;
+  border-radius: 6px;
+  background: #1a1916;
+  color: #d8d1c6;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.md-code-toggle:hover,
+.md-code-toggle:focus-visible {
+  border-color: #706a60;
+  color: #f0ebe3;
+}
+
+.md-code-toggle:focus-visible {
+  outline: 2px solid #d9773a;
+  outline-offset: 2px;
+}
+
+.md-pre-plain {
+  margin: 0.55em 0;
+  max-height: min(42vh, 22rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  padding: 0.75em 0.9em;
+  background: #141311;
+  border: 1px solid #2e2c27;
+  border-radius: 8px;
 }
 
 .tool-row {

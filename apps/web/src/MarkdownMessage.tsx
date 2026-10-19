@@ -1,5 +1,52 @@
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+const CODE_COLLAPSE_LINES = 32;
+
+function CodeBlock({ text, className }: { text: string; className?: string }) {
+  const lineCount = text.split("\n").length;
+  const canCollapse = lineCount > CODE_COLLAPSE_LINES;
+  const [expanded, setExpanded] = useState(!canCollapse);
+  const shown = !expanded && canCollapse
+    ? `${text.split("\n").slice(0, CODE_COLLAPSE_LINES).join("\n")}\n…`
+    : text;
+
+  return (
+    <div className="md-code-wrap">
+      <pre className="md-pre">
+        <code className={className}>{shown}</code>
+      </pre>
+      {canCollapse ? (
+        <button
+          type="button"
+          className="md-code-toggle"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Show less" : `Show all ${lineCount} lines`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+const HUGE_REPLY_CHARS = 10_000;
+
+function looksLikeCodeDump(text: string): boolean {
+  const lines = text.split("\n").length;
+  if (lines >= 60) return true;
+  const trimmed = text.trimStart().slice(0, 80).toLowerCase();
+  return trimmed.startsWith("<!doctype") || trimmed.startsWith("<html") || trimmed.startsWith("<form") || trimmed.startsWith("```");
+}
+
+/** Prefer a capped plain view for giant dumps; full markdown for normal replies. */
+export function AssistantReply({ content, live = false }: { content: string; live?: boolean }) {
+  const huge = content.length >= HUGE_REPLY_CHARS || (live && content.length >= 4_000 && looksLikeCodeDump(content));
+  if (huge || (live && content.length >= 6_000)) {
+    return <CodeBlock text={content} />;
+  }
+  return <MarkdownMessage content={content} />;
+}
 
 export function MarkdownMessage({ content }: { content: string }) {
   return (
@@ -22,14 +69,9 @@ export function MarkdownMessage({ content }: { content: string }) {
                 </code>
               );
             }
-            return (
-              <pre className="md-pre">
-                <code className={className} {...props}>
-                  {text}
-                </code>
-              </pre>
-            );
+            return <CodeBlock text={text} className={className} />;
           },
+          pre: ({ children }) => <>{children}</>,
         }}
       >
         {content}
@@ -60,8 +102,7 @@ export function formatToolDetail(raw: unknown): string | undefined {
       ([, v]) => v !== "" && v != null && !(typeof v === "object" && JSON.stringify(v) === "{}"),
     );
     if (entries.length === 0) return undefined;
-    // Prefer a human query/url string when present
-  for (const key of ["command", "query", "url", "upload_id", "q"]) {
+    for (const key of ["command", "query", "url", "upload_id", "q"]) {
       const hit = entries.find(([k]) => k === key);
       if (hit && typeof hit[1] === "string" && hit[1].trim()) {
         return hit[1].trim();

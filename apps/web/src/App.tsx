@@ -49,9 +49,9 @@ import type {
 import * as api from "./api";
 import { BlobAvatar, OrbitDots } from "./BlobAvatar";
 import {
+  AssistantReply,
   formatToolDetail,
   isEmptyNoiseContent,
-  MarkdownMessage,
 } from "./MarkdownMessage";
 import { loadSettings, saveSettings } from "./settings";
 import { SettingsModal } from "./SettingsModal";
@@ -68,6 +68,7 @@ import { startActivityPulse, stopActivityPulse } from "./uiSounds";
 import { absoluteUrl, conversationPath, parseAppPath, syncUrl } from "./routes";
 
 const ICON_LG = 18;
+const THREAD_WINDOW = 40;
 
 type ThreadItem =
   | { kind: "message"; message: ChatMessage }
@@ -134,9 +135,18 @@ export function App() {
   const [draggingFiles, setDraggingFiles] = useState(false);
   const dragDepth = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const threadScrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [threadWindow, setThreadWindow] = useState(THREAD_WINDOW);
   const activeConversation = conversations.find((conversation) => conversation.id === activeId);
   const activeBot = activeConversation?.bot ?? DEFAULT_BOT;
+  const hiddenThreadCount = Math.max(0, thread.length - threadWindow);
+  const visibleThread = useMemo(
+    () => (hiddenThreadCount > 0 ? thread.slice(hiddenThreadCount) : thread),
+    [thread, hiddenThreadCount],
+  );
+  const lastVisible = visibleThread.at(-1);
+  const lastVisibleMessageId = lastVisible?.kind === "message" ? lastVisible.message.id : undefined;
 
   useEffect(() => {
     function onEscape(event: KeyboardEvent) {
@@ -180,7 +190,12 @@ export function App() {
 
   useEffect(() => {
     if (thread.length === 0) return;
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const scroller = threadScrollRef.current;
+    if (scroller) {
+      const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      if (distance > 140 && !busy) return;
+    }
+    bottomRef.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth" });
   }, [thread, busy]);
 
   const openConversation = useCallback(async (id: string, opts?: { history?: "push" | "replace" | "none" }) => {
@@ -188,6 +203,7 @@ export function App() {
     attachments.clear();
     const data = await api.getConversation(id);
     setActiveId(id);
+    setThreadWindow(THREAD_WINDOW);
     setThread(toThread(data.messages));
     setConversations((previous) => {
       const exists = previous.some((item) => item.id === data.conversation.id);
@@ -202,6 +218,7 @@ export function App() {
   const goHome = useCallback((history: "push" | "replace" = "push") => {
     setActiveId(undefined);
     setThread([]);
+    setThreadWindow(THREAD_WINDOW);
     attachments.clear();
     setDraft("");
     setError(null);
@@ -572,8 +589,8 @@ export function App() {
             </Group>
 
             <div className="chat-column">
-            <Box className={`thread-scroll${thread.length === 0 ? " thread-empty" : ""}`}>
-              <Stack gap="sm" className={thread.length === 0 ? "thread-empty-stack" : undefined}>
+            <Box ref={threadScrollRef} className={`thread-scroll${thread.length === 0 ? " thread-empty" : ""}`}>
+              <Stack gap="sm" className={thread.length === 0 ? "thread-empty-stack" : "thread-stack"}>
                 {thread.length === 0 ? (
                   <Stack className="empty-chat" align="center" justify="center" gap="lg">
                     {activeConversation?.kind === "group" ? <Group justify="center">{activeConversation.memberIds?.map((id) => <BlobAvatar key={id} seed={id} size={72} appearance={conversations.find((c) => c.id === id)?.bot} />)}</Group> : <BlobAvatar seed={activeId ?? "rex-brand"} size={132} appearance={activeBot} />}
@@ -589,7 +606,19 @@ export function App() {
                     <Group justify="center" gap="sm">{!hasBots ? <Button leftSection={<IconBotAdd size={24} />} onClick={() => setBotEditor("new")}>Create your first bot</Button> : <Button variant="default" leftSection={<IconSearch size={24} />} onClick={() => setDraft("Search the web for ")}>Research something</Button>}<Button variant="default" leftSection={<IconComputer size={24} />} onClick={() => setShowComputer(true)}>Open Rex Computer</Button></Group>
                   </Stack>
                 ) : (
-                  thread.map((item) => {
+                  <>
+                  {hiddenThreadCount > 0 ? (
+                    <Group justify="center">
+                      <Button
+                        variant="default"
+                        size="compact-md"
+                        onClick={() => setThreadWindow((count) => count + THREAD_WINDOW)}
+                      >
+                        Load earlier messages ({hiddenThreadCount})
+                      </Button>
+                    </Group>
+                  ) : null}
+                  {visibleThread.map((item) => {
                     if (item.kind === "tool") {
                       const result = item.tool === "computer_exec" ? computerResult(item.detail) : null;
                       return (
@@ -668,12 +697,16 @@ export function App() {
                             {m.content}
                           </Text>
                         ) : (
-                          <MarkdownMessage content={botReplyText(m.content, m.botName ?? activeBot.name)} />
+                          <AssistantReply
+                            content={botReplyText(m.content, m.botName ?? activeBot.name)}
+                            live={busy && m.id === lastVisibleMessageId}
+                          />
                         )}
                         <MessageReactions message={m} enabled={!isUser && !busy} onError={setError} onChange={(reactions) => setThread((prev) => prev.map((entry) => entry.kind === "message" && entry.message.id === m.id ? { ...entry, message: { ...entry.message, reactions } } : entry))} />
                       </Paper>
                     );
-                  })
+                  })}
+                  </>
                 )}
                 <div ref={bottomRef} />
               </Stack>
