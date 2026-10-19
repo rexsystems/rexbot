@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
-import { buildSystemPrompt, DEFAULT_SETTINGS, TOOL_DEFINITIONS, type ClientSettings, type VoiceSessionConfig } from "@rex/shared";
+import { buildSystemPrompt, DEFAULT_SETTINGS, END_CALL_TOOL, TOOL_DEFINITIONS, type ClientSettings, type VoiceSessionConfig } from "@rex/shared";
 import { getConversation, insertMessage, listMessages } from "../conversations.js";
 import { activeChats, peers } from "../groups.js";
 import { runTool } from "../tools/index.js";
@@ -51,7 +51,10 @@ voiceRoutes.post("/voice", async (c) => {
   if (activeChats.has(bot.id)) return c.json({ error: "This bot is already working." }, 409);
   activeChats.add(bot.id);
   const roster = peers(bot.id);
-  const definitions = TOOL_DEFINITIONS.filter((tool) => tool.name !== "react_message" && (tool.name !== "message_bot" || roster.length));
+  const definitions = [
+    ...TOOL_DEFINITIONS.filter((tool) => tool.name !== "react_message" && (tool.name !== "message_bot" || roster.length)),
+    END_CALL_TOOL,
+  ];
   const history = listMessages(bot.id).filter((message) => ["user", "assistant"].includes(message.role) && (message.content.trim() || message.attachments?.length)).slice(-20).map((message) => ({ role: message.role === "user" ? "user" as const : "model" as const, parts: [{ text: `${message.content.slice(0, 4000)}${message.attachments?.length ? `\nFiles: ${message.attachments.map((file) => `${file.filename} (${file.mimeType}, upload id ${file.id})`).join(", ")}. Use read_upload for text. Image pixels are not provided in this voice session.` : ""}` }] }));
   const setup = {
     model: `models/${model}`,
@@ -65,7 +68,7 @@ voiceRoutes.post("/voice", async (c) => {
     },
     inputAudioTranscription: {}, outputAudioTranscription: {},
     ...(history.length ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
-    systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories().slice(0, 8)), bot.bot)}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. Do not claim a tool action succeeded until its result is returned.` }] },
+    systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories().slice(0, 8)), bot.bot)}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. If the user asks to hang up, end the call, stop the call, or clearly says goodbye to close it, or you decide the call should end, say a brief goodbye if natural and then call end_call so the client disconnects. Do not claim a tool action succeeded until its result is returned.` }] },
     tools: [{ functionDeclarations: definitions.map(({ name, description, parameters }) => ({ name, description, parameters })) }],
   };
   try {
@@ -97,6 +100,13 @@ voiceRoutes.post("/voice/:id/tool", async (c) => {
   let body: { name?: string; args?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
   if (!body || !session.tools.has(body.name ?? "") || session.remaining <= 0) return c.json({ error: "Tool unavailable or voice tool limit reached." }, 400);
+  if (body.name === "end_call") {
+    const reason = body.args && typeof body.args === "object" && typeof (body.args as { reason?: unknown }).reason === "string"
+      ? (body.args as { reason: string }).reason.trim().slice(0, 200)
+      : "";
+    const output = reason ? `Ending the call: ${reason}` : "Ending the call.";
+    return c.json({ output, endCall: true });
+  }
   session.remaining--;
   session.activeTools++;
   try {

@@ -54,6 +54,7 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     assert.ok(!JSON.stringify(config).includes("google-test-key"));
     assert.equal(config.setup.model, "models/gemini-3.8-live");
     assert.equal((config.setup.generationConfig as { speechConfig?: { voiceConfig?: { prebuiltVoiceConfig?: { voiceName?: string } } } }).speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName, "Kore");
+    assert.ok(JSON.stringify(config.setup).includes("end_call"));
     assert.ok(JSON.stringify(config.setup).includes("R-38"));
     const auth = requests.find((request) => request.url.endsWith("/auth_tokens"))!;
     assert.equal(auth.body.uses, 1);
@@ -61,6 +62,9 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     assert.ok(activeChats.has(bot.id));
     assert.equal((await post("/voice", { conversationId: bot.id, settings })).status, 409);
     assert.equal((await post(`/voice/${config.id}/tool`, { name: "react_message", args: {} })).status, 400);
+    const hangup = await post(`/voice/${config.id}/tool`, { name: "end_call", args: { reason: "User said goodbye" } });
+    assert.equal(hangup.status, 200);
+    assert.deepEqual(await hangup.json(), { output: "Ending the call: User said goodbye", endCall: true });
     const tool = await post(`/voice/${config.id}/tool`, { name: "web_search", args: { query: "test" } });
     assert.match((await tool.json() as { output: string }).output, /unavailable/);
     const turn = { id: "turn-1", user: "Hello voice", assistant: "Hello from Google Live" };

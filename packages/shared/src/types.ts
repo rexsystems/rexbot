@@ -134,7 +134,7 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "react_message" | "message_bot";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "react_message" | "message_bot" | "end_call";
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";

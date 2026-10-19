@@ -1,11 +1,14 @@
 import type { ClientSettings } from "@rex/shared";
 import { endVoiceSession, saveVoiceTurn, startVoiceSession, voiceTool } from "./api";
+import { playActivityTick, startActivityPulse, stopActivityPulse } from "./uiSounds";
 
 export interface LiveConnection { stop: () => Promise<void>; mute: (muted: boolean) => void }
 interface Callbacks {
   state: (state: string) => void;
   transcript: (role: "user" | "assistant", text: string) => void;
   error: (message: string) => void;
+  /** Fired once when the call fully ends (user, bot hangup, or error teardown). */
+  ended?: (reason: "user" | "bot" | "error") => void;
 }
 
 export function encodePcm(samples: Float32Array, rate: number): string {
@@ -39,6 +42,9 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
   let assistantText = "";
   let saves = Promise.resolve();
   let stopping: Promise<void> | undefined;
+  let hangupRequested = false;
+  let endReason: "user" | "bot" | "error" = "user";
+  let hangupTimer: ReturnType<typeof setTimeout> | undefined;
   const cancelledTools = new Set<string>();
   const playing = new Set<AudioBufferSourceNode>();
   function stopPlayback() { for (const node of playing) { try { node.stop(); } catch { /* A completed source is already stopped. */ } } playing.clear(); nextPlayTime = 0; }
@@ -49,10 +55,22 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
     userText = assistantText = "";
     saves = saves.then(async () => { await saveVoiceTurn(id, turn); }).catch((error) => callbacks.error(`Could not save voice transcript: ${error instanceof Error ? error.message : String(error)}`));
   }
-  function stop(): Promise<void> {
+  function requestBotHangup() {
+    hangupRequested = true;
+    endReason = "bot";
+    callbacks.state("Ending call");
+    if (hangupTimer) clearTimeout(hangupTimer);
+    // Give a short window for a spoken goodbye, then disconnect for real.
+    hangupTimer = setTimeout(() => { if (!closed) void stop("bot"); }, 3500);
+  }
+  function stop(reason: "user" | "bot" | "error" = "user"): Promise<void> {
     if (stopping) return stopping;
+    endReason = reason;
     closed = true;
     ready = false;
+    hangupRequested = false;
+    if (hangupTimer) clearTimeout(hangupTimer);
+    stopActivityPulse();
     stream?.getTracks().forEach((track) => track.stop());
     capture?.disconnect();
     source?.disconnect();
@@ -64,6 +82,7 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
       await saves;
       if (sessionId) await endVoiceSession(sessionId).catch((error) => callbacks.error(error instanceof Error ? error.message : String(error)));
       callbacks.state("Ended");
+      callbacks.ended?.(endReason);
     })();
     return stopping;
   }
@@ -127,7 +146,13 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
             node.buffer = buffer;
             node.connect(audio.destination);
             playing.add(node);
-            node.onended = () => { playing.delete(node); if (!playing.size && !closed) callbacks.state(muted ? "Muted" : "Listening"); };
+            node.onended = () => {
+              playing.delete(node);
+              if (!playing.size && !closed) {
+                if (hangupRequested) void stop("bot");
+                else callbacks.state(muted ? "Muted" : "Listening");
+              }
+            };
             nextPlayTime = Math.max(audio.currentTime + .02, nextPlayTime);
             node.start(nextPlayTime);
             nextPlayTime += buffer.duration;
@@ -135,26 +160,44 @@ export async function startLiveVoice(conversationId: string, settings: ClientSet
           }
           if (data.toolCall?.functionCalls) {
             callbacks.state("Using tools");
+            startActivityPulse();
             for (const call of data.toolCall.functionCalls) {
               if (cancelledTools.has(call.id) || closed) continue;
-              let response: unknown;
+              playActivityTick();
+              let response: { output?: string; endCall?: boolean; error?: string };
               try { response = await voiceTool(config.id, call.name, call.args ?? {}); }
               catch (error) { response = { error: error instanceof Error ? error.message : String(error) }; }
-              if (!cancelledTools.has(call.id) && !closed && connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify({ toolResponse: { functionResponses: [{ id: call.id, name: call.name, response }] } }));
+              if (!cancelledTools.has(call.id) && !closed && connection.readyState === WebSocket.OPEN) {
+                connection.send(JSON.stringify({ toolResponse: { functionResponses: [{ id: call.id, name: call.name, response }] } }));
+              }
+              if (response.endCall || call.name === "end_call") requestBotHangup();
             }
+            if (!hangupRequested) stopActivityPulse();
           }
-          if (content?.turnComplete) { saveTurn(); if (!playing.size) callbacks.state(muted ? "Muted" : "Listening"); }
-          if (data.goAway) { callbacks.error("Google Live is ending this session. Start another call to continue."); void stop(); }
+          if (content?.turnComplete) {
+            saveTurn();
+            if (hangupRequested && !playing.size) void stop("bot");
+            else if (!playing.size) callbacks.state(muted ? "Muted" : "Listening");
+          }
+          if (data.goAway) { callbacks.error("Google Live is ending this session. Start another call to continue."); void stop("error"); }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           clearTimeout(timeout);
           callbacks.error(message);
           reject(new Error(message));
-          void stop();
+          void stop("error");
         }
       };
     });
     check();
-    return { stop, mute(value) { muted = value; stream?.getAudioTracks().forEach((track) => { track.enabled = !value; }); if (value && connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } })); callbacks.state(value ? "Muted" : "Listening"); } };
-  } catch (error) { await stop(); throw error; }
+    return {
+      stop: () => stop("user"),
+      mute(value) {
+        muted = value;
+        stream?.getAudioTracks().forEach((track) => { track.enabled = !value; });
+        if (value && connection.readyState === WebSocket.OPEN) connection.send(JSON.stringify({ realtimeInput: { audioStreamEnd: true } }));
+        callbacks.state(value ? "Muted" : "Listening");
+      },
+    };
+  } catch (error) { await stop("error"); throw error; }
 }

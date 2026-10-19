@@ -85,6 +85,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   },
 ];
 
+/** Live-voice only: hang up when the user asks or the bot decides the call should end. */
+export const END_CALL_TOOL: ToolDefinition = {
+  name: "end_call",
+  description:
+    "End this live voice call now. Use when the user asks to hang up, end the call, stop the call, disconnect, or says goodbye in a way that closes the call. Also use when you decide the conversation is finished and should disconnect. Say a brief goodbye first if natural, then call this tool. Do not claim the call ended until this tool runs.",
+  parameters: {
+    type: "object",
+    properties: {
+      reason: { type: "string", description: "Optional short reason for ending the call" },
+    },
+  },
+};
+
 export function toOpenAiTools() {
   return TOOL_DEFINITIONS.map((tool) => ({
     type: "function" as const,

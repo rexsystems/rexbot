@@ -47,7 +47,7 @@ export function saveBot(profile: BotProfile, id?: string) {
 export const saveGroup = (title: string, memberIds: string[], id?: string) => json<Conversation>(`/groups${id ? `/${encodeURIComponent(id)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, memberIds }) });
 export const groupExchanges = (id: string) => json<BotExchange[]>(`/groups/${encodeURIComponent(id)}/exchanges`);
 export const startVoiceSession = (conversationId: string, settings: ClientSettings, signal: AbortSignal) => json<VoiceSessionConfig>("/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, settings }), signal });
-export const voiceTool = (id: string, name: string, args: unknown) => json<{ output: string }>(`/voice/${encodeURIComponent(id)}/tool`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, args }) });
+export const voiceTool = (id: string, name: string, args: unknown) => json<{ output: string; endCall?: boolean }>(`/voice/${encodeURIComponent(id)}/tool`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, args }) });
 export const saveVoiceTurn = (id: string, turn: { id: string; user: string; assistant: string }) => json<{ ok: boolean }>(`/voice/${encodeURIComponent(id)}/turn`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(turn) });
 export const endVoiceSession = (id: string) => json<{ ok: boolean }>(`/voice/${encodeURIComponent(id)}`, { method: "DELETE" });
 

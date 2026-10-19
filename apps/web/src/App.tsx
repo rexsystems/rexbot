@@ -62,6 +62,7 @@ import { DeleteDialog } from "./DeleteDialog";
 import { MentionInput } from "./MentionInput";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
+import { startActivityPulse, stopActivityPulse } from "./uiSounds";
 
 const ICON_LG = 18;
 
@@ -145,6 +146,13 @@ export function App() {
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
   }, [botEditor, showSettings, showMemory, voiceBot]);
+
+  useEffect(() => {
+    const toolRunning = thread.some((item) => item.kind === "tool" && item.status === "running");
+    if (toolRunning) startActivityPulse();
+    else stopActivityPulse();
+    return () => stopActivityPulse();
+  }, [thread]);
 
   const refreshLists = useCallback(async () => {
     const [convs, mems] = await Promise.all([

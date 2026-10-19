@@ -22,24 +22,39 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
     const body = route.request().postDataJSON();
     expect(body.settings.liveModel).toBe("gemini-3.8-live");
     expect(body.settings.googleApiKey).toBe("test-only-google-key");
-    await route.fulfill({ json: { id: "ui-session", url: "wss://generativelanguage.googleapis.com/ws/ui-test?access_token=short-lived", setup: { model: "models/gemini-3.8-live", generationConfig: { responseModalities: ["AUDIO"] } }, history: [] } });
+    await route.fulfill({ json: { id: "ui-session", url: "wss://generativelanguage.googleapis.com/ws/ui-test?access_token=short-lived", setup: { model: "models/gemini-3.8-live", generationConfig: { responseModalities: ["AUDIO"] }, tools: [{ functionDeclarations: [{ name: "http_fetch" }, { name: "end_call" }] }] }, history: [] } });
   });
-  await page.route("**/voice/ui-session/tool", (route) => route.fulfill({ json: { output: "Verified tool fixture" } }));
+  await page.route("**/voice/ui-session/tool", async (route) => {
+    const body = route.request().postDataJSON() as { name?: string };
+    if (body.name === "end_call") await route.fulfill({ json: { output: "Ending the call.", endCall: true } });
+    else await route.fulfill({ json: { output: "Verified tool fixture" } });
+  });
   await page.route("**/voice/ui-session/turn", async (route) => { turns.push(route.request().postDataJSON()); await route.fulfill({ json: { ok: true } }); });
   await page.route("**/voice/ui-session", async (route) => { ended = true; await route.fulfill({ json: { ok: true } }); });
   await page.routeWebSocket("wss://generativelanguage.googleapis.com/**", (socket) => {
     socket.onMessage((raw) => {
       const message = JSON.parse(String(raw));
-      if (message.setup) { expect(message.setup.model).toBe("models/gemini-3.8-live"); socket.send(JSON.stringify({ setupComplete: {} })); }
+      if (message.setup) {
+        expect(message.setup.model).toBe("models/gemini-3.8-live");
+        expect(JSON.stringify(message.setup.tools)).toContain("end_call");
+        socket.send(JSON.stringify({ setupComplete: {} }));
+      }
       if (message.realtimeInput?.audio) {
         audioPackets++;
         expect(message.realtimeInput.audio.mimeType).toBe("audio/pcm;rate=16000");
         expect(Buffer.from(message.realtimeInput.audio.data, "base64").length).toBeGreaterThan(100);
         if (audioPackets === 1) socket.send(JSON.stringify({ toolCall: { functionCalls: [{ id: "voice-tool", name: "http_fetch", args: { url: "https://example.com" } }] } }));
+        if (audioPackets === 3) socket.send(JSON.stringify({ toolCall: { functionCalls: [{ id: "hangup", name: "end_call", args: { reason: "User said hang up" } }] } }));
       }
       if (message.toolResponse) {
         toolResponses++;
-        expect(message.toolResponse.functionResponses[0].response.output).toBe("Verified tool fixture");
+        const call = message.toolResponse.functionResponses[0];
+        if (call.name === "end_call") {
+          expect(call.response.endCall).toBe(true);
+          socket.send(JSON.stringify({ serverContent: { turnComplete: true } }));
+          return;
+        }
+        expect(call.response.output).toBe("Verified tool fixture");
         socket.send(JSON.stringify({ serverContent: { inputTranscription: { text: "Hello voice." }, outputTranscription: { text: "Hello from Live." }, modelTurn: { parts: [{ inlineData: { mimeType: "audio/pcm;rate=24000", data: Buffer.alloc(480).toString("base64") } }] }, turnComplete: true } }));
       }
     });
@@ -63,8 +78,8 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
   await page.getByRole("button", { name: "Unmute microphone", exact: true }).click();
   expect(await page.evaluate(() => (window as any).__voiceTracks.every((track: MediaStreamTrack) => track.enabled))).toBe(true);
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
-  await page.getByRole("button", { name: "End call", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("Ended");
+  await expect.poll(() => toolResponses).toBe(2);
+  await expect(page.getByRole("region", { name: "Live voice" })).toHaveCount(0);
   expect(ended).toBe(true);
   expect(turns).toEqual([expect.objectContaining({ user: "Hello voice.", assistant: "Hello from Live." })]);
   expect(await page.evaluate(() => (window as any).__voiceTracks.every((track: MediaStreamTrack) => track.readyState === "ended"))).toBe(true);
@@ -72,7 +87,7 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
   await page.screenshot({ path: "test-results/live-voice.png", fullPage: true });
   await page.unroute("**/voice");
   await page.route("**/voice", (route) => route.fulfill({ status: 502, json: { error: "Google model unavailable. Check your key and quota." } }));
-  await page.getByRole("button", { name: "Start call", exact: true }).click();
+  await page.getByRole("button", { name: "Live voice", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Google model unavailable");
   expect(await page.evaluate(() => (window as any).__voiceTracks.every((track: MediaStreamTrack) => track.readyState === "ended"))).toBe(true);
   await page.getByRole("button", { name: "Close voice call", exact: true }).click();

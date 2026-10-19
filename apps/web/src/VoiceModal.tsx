@@ -4,6 +4,7 @@ import type { ClientSettings, Conversation } from "@rex/shared";
 import { BlobAvatar } from "./BlobAvatar";
 import { startLiveVoice, type LiveConnection } from "./liveVoice";
 import { IconMic, IconStop, IconX } from "./icons";
+import { playCallEnd, playCallStart } from "./uiSounds";
 
 export function VoiceModal({
   bot,
@@ -23,10 +24,43 @@ export function VoiceModal({
   const call = useRef<LiveConnection | undefined>(undefined);
   const abort = useRef<AbortController | undefined>(undefined);
   const onTranscriptRef = useRef(onTranscript);
+  const onCloseRef = useRef(onClose);
+  const heardConnect = useRef(false);
   onTranscriptRef.current = onTranscript;
+  onCloseRef.current = onClose;
 
-  async function stop() {
+  function wireCallbacks(active: () => boolean) {
+    return {
+      state(next: string) {
+        if (!active()) return;
+        setState(next);
+        if (next === "Listening" && !heardConnect.current) {
+          heardConnect.current = true;
+          playCallStart();
+        }
+        if (next === "Ended") setRunning(false);
+      },
+      transcript(role: "user" | "assistant", text: string) {
+        if (active()) onTranscriptRef.current?.(role, text);
+      },
+      error(message: string) {
+        if (active()) setError(message);
+      },
+      ended(reason: "user" | "bot" | "error") {
+        if (!active()) return;
+        setRunning(false);
+        setState("Ended");
+        if (reason === "bot") {
+          playCallEnd();
+          onCloseRef.current();
+        }
+      },
+    };
+  }
+
+  async function stop(playEndSound = true) {
     abort.current?.abort();
+    if (playEndSound && call.current) playCallEnd();
     await call.current?.stop();
     call.current = undefined;
     setRunning(false);
@@ -38,20 +72,13 @@ export function VoiceModal({
     setRunning(true);
     setMuted(false);
     setState("Starting");
+    heardConnect.current = false;
     const controller = new AbortController();
     abort.current = controller;
+    const active = () => !controller.signal.aborted;
     try {
-      call.current = await startLiveVoice(bot.id, settings, controller.signal, {
-        state(next) {
-          setState(next);
-          if (next === "Ended") setRunning(false);
-        },
-        transcript(role, text) {
-          onTranscriptRef.current?.(role, text);
-        },
-        error: setError,
-      });
-      setState("Listening");
+      call.current = await startLiveVoice(bot.id, settings, controller.signal, wireCallbacks(active));
+      if (active()) setState("Listening");
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
       setRunning(false);
@@ -63,6 +90,8 @@ export function VoiceModal({
     const controller = new AbortController();
     abort.current = controller;
     let active = true;
+    const isActive = () => active && !controller.signal.aborted;
+    heardConnect.current = false;
 
     async function run() {
       if (!settings.googleApiKey?.trim()) {
@@ -74,22 +103,10 @@ export function VoiceModal({
       setMuted(false);
       setState("Starting");
       try {
-        call.current = await startLiveVoice(bot.id, settings, controller.signal, {
-          state(next) {
-            if (!active) return;
-            setState(next);
-            if (next === "Ended") setRunning(false);
-          },
-          transcript(role, text) {
-            if (active) onTranscriptRef.current?.(role, text);
-          },
-          error(message) {
-            if (active) setError(message);
-          },
-        });
-        if (active) setState("Listening");
+        call.current = await startLiveVoice(bot.id, settings, controller.signal, wireCallbacks(isActive));
+        if (isActive()) setState("Listening");
       } catch (err) {
-        if (!active || controller.signal.aborted) return;
+        if (!isActive()) return;
         setError(err instanceof Error ? err.message : String(err));
         setRunning(false);
         setState("Ready");
@@ -133,7 +150,7 @@ export function VoiceModal({
               >
                 {muted ? "Unmute microphone" : "Mute microphone"}
               </Button>
-              <Button size="compact-md" color="red.8" leftSection={<IconStop size={18} />} onClick={() => void stop()}>
+              <Button size="compact-md" color="red.8" leftSection={<IconStop size={18} />} onClick={() => void stop(true)}>
                 End call
               </Button>
             </>
@@ -147,7 +164,7 @@ export function VoiceModal({
               size={44}
               variant="subtle"
               aria-label="Close voice call"
-              onClick={() => void stop().then(onClose)}
+              onClick={() => void stop(running).then(onClose)}
             >
               <IconX size={22} />
             </ActionIcon>
@@ -159,7 +176,7 @@ export function VoiceModal({
       ) : null}
       {error ? <Alert role="alert" title="Voice call" color="red" mt="sm">{error}</Alert> : null}
       <Text size="xs" c="dimmed" mt="xs">
-        Transcripts appear in this chat. Raw audio is not stored by Rexbot. Change the voice in Customize bot.
+        Transcripts appear in this chat. Say hang up or goodbye to end the call, or use End call. Change the voice in Customize bot.
       </Text>
     </Paper>
   );
