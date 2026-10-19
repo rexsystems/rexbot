@@ -1,0 +1,24 @@
+{
+  "name": "rexbot",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm --filter @rex/shared build && pnpm --parallel --filter api --filter web dev",
+    "test": "pnpm --filter api test && pnpm --filter web test",
+    "dev:api": "pnpm --filter api dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:desktop": "pnpm --filter desktop tauri:dev",
+    "build": "pnpm --filter shared build && pnpm --filter api build && pnpm --filter web build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  }
+}

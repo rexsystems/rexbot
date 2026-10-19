@@ -1,0 +1,118 @@
+import type {
+  ChatMessage,
+  ClientSettings,
+  Conversation,
+  MemoryItem,
+  SseEvent,
+  UploadMeta,
+  ComputerStatus,
+  ComputerResult,
+  MessageReaction,
+  ReactionEmoji,
+  BotProfile,
+} from "@rex/shared";
+
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8787";
+
+async function json<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, init);
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text;
+    try { message = JSON.parse(text).error ?? text; } catch { /* Keep non-JSON server errors readable. */ }
+    throw new Error(message || res.statusText);
+  }
+  return res.json() as Promise<T>;
+}
+
+export const computerStatus = () => json<ComputerStatus>("/computer");
+export const startComputer = () => json<ComputerStatus>("/computer/start", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+export const stopComputer = () => json<ComputerStatus>("/computer/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+export const execComputer = (command: string) => json<ComputerResult>("/computer/exec", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command }) });
+export const reactToMessage = (id: string, emoji: ReactionEmoji) => json<{ reactions: MessageReaction[] }>(`/messages/${encodeURIComponent(id)}/reactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emoji }) });
+
+export function listConversations() {
+  return json<Conversation[]>("/conversations");
+}
+
+export const uploadUrl = (id: string) => `${API_BASE}/uploads/${encodeURIComponent(id)}/content`;
+export const deleteUpload = (id: string) => json<{ ok: boolean }>(`/uploads/${encodeURIComponent(id)}`, { method: "DELETE" });
+
+export function saveBot(profile: BotProfile, id?: string) {
+  return json<Conversation>(`/bots${id ? `/${encodeURIComponent(id)}` : ""}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) });
+}
+
+export function getConversation(id: string) {
+  return json<{ conversation: Conversation; messages: ChatMessage[] }>(
+    `/conversations/${id}`,
+  );
+}
+
+export function deleteConversation(id: string) {
+  return json<{ ok: boolean }>(`/conversations/${id}`, { method: "DELETE" });
+}
+
+export function listMemories() {
+  return json<MemoryItem[]>("/memories");
+}
+
+export function deleteMemory(id: string) {
+  return json<{ ok: boolean }>(`/memories/${id}`, { method: "DELETE" });
+}
+
+export async function uploadFile(file: File): Promise<UploadMeta> {
+  const body = new FormData();
+  body.append("file", file);
+  return json<UploadMeta>("/uploads", { method: "POST", body });
+}
+
+export async function streamChat(opts: {
+  conversationId?: string;
+  message: string;
+  uploadIds?: string[];
+  settings: ClientSettings;
+  onEvent: (event: SseEvent) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const res = await fetch(`${API_BASE}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conversationId: opts.conversationId,
+      message: opts.message,
+      uploadIds: opts.uploadIds,
+      settings: opts.settings,
+    }),
+    signal: opts.signal,
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text();
+    throw new Error(text || `Chat failed (${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      const line = part
+        .split("\n")
+        .find((l) => l.startsWith("data:"));
+      if (!line) continue;
+      const data = line.slice(5).trim();
+      if (!data) continue;
+      try {
+        opts.onEvent(JSON.parse(data) as SseEvent);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
