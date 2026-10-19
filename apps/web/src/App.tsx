@@ -18,6 +18,7 @@ import {
   Tooltip,
   UnstyledButton,
 } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import {
   IconBotAdd,
   IconPaperclip,
@@ -36,6 +37,7 @@ import {
   IconPlus,
   IconChevronDown,
   IconMic,
+  IconLink,
 } from "./icons";
 import type {
   ChatMessage,
@@ -63,6 +65,7 @@ import { MentionInput } from "./MentionInput";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 import { startActivityPulse, stopActivityPulse } from "./uiSounds";
+import { absoluteUrl, conversationPath, parseAppPath, syncUrl } from "./routes";
 
 const ICON_LG = 18;
 
@@ -120,6 +123,7 @@ export function App() {
   const [showMemory, setShowMemory] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [listsLoaded, setListsLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | undefined>();
   const [thread, setThread] = useState<ThreadItem[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
@@ -161,6 +165,7 @@ export function App() {
     ]);
     setConversations(convs);
     setMemories(mems);
+    setListsLoaded(true);
     return convs;
   }, []);
 
@@ -178,29 +183,72 @@ export function App() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread, busy]);
 
-  const openConversation = useCallback(async (id: string) => {
+  const openConversation = useCallback(async (id: string, opts?: { history?: "push" | "replace" | "none" }) => {
     setError(null);
-    setActiveId(id);
     attachments.clear();
     const data = await api.getConversation(id);
+    setActiveId(id);
     setThread(toThread(data.messages));
+    setConversations((previous) => {
+      const exists = previous.some((item) => item.id === data.conversation.id);
+      if (exists) return previous.map((item) => item.id === data.conversation.id ? data.conversation : item);
+      return [data.conversation, ...previous];
+    });
     setMobileNav(false);
+    const history = opts?.history ?? "push";
+    if (history !== "none") syncUrl(conversationPath(data.conversation), history);
   }, [attachments]);
 
-  // Landing "create your first bot" only when there are no bots. Otherwise open one.
-  useEffect(() => {
-    if (activeId || botEditor || !hasBots) return;
-    const first = bots[0]!;
-    void openConversation(first.id).catch((error) => setError(error instanceof Error ? error.message : String(error)));
-  }, [activeId, botEditor, bots, hasBots, openConversation]);
-
-  const newChat = () => {
+  const goHome = useCallback((history: "push" | "replace" = "push") => {
     setActiveId(undefined);
     setThread([]);
     attachments.clear();
     setDraft("");
     setError(null);
     setMobileNav(false);
+    syncUrl("/", history);
+  }, [attachments]);
+
+  // Deep link from URL, or open the first bot when landing on home with bots.
+  useEffect(() => {
+    if (!listsLoaded || botEditor) return;
+    const route = parseAppPath(window.location.pathname);
+    if (route.kind === "bot" || route.kind === "group") {
+      if (activeId === route.id) return;
+      if (!conversations.some((conversation) => conversation.id === route.id)) {
+        setError(route.kind === "group" ? "That group was not found." : "That bot was not found.");
+        if (hasBots) {
+          void openConversation(bots[0]!.id, { history: "replace" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
+        } else {
+          goHome("replace");
+        }
+        return;
+      }
+      void openConversation(route.id, { history: "replace" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
+      return;
+    }
+    if (activeId || !hasBots) return;
+    void openConversation(bots[0]!.id, { history: "replace" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [listsLoaded, botEditor, activeId, conversations, hasBots, bots, openConversation, goHome]);
+
+  useEffect(() => {
+    function onPopState() {
+      const route = parseAppPath(window.location.pathname);
+      if (route.kind === "home") {
+        setActiveId(undefined);
+        setThread([]);
+        attachments.clear();
+        setDraft("");
+        return;
+      }
+      void openConversation(route.id, { history: "none" }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [attachments, openConversation]);
+
+  const newChat = () => {
+    goHome("push");
   };
 
   const onSaveSettings = (next: ClientSettings) => {
@@ -289,6 +337,7 @@ export function App() {
           if (ev.type === "conversation") {
             conversationId = ev.conversation.id;
             setActiveId(ev.conversation.id);
+            syncUrl(conversationPath(ev.conversation), activeId ? "replace" : "push");
             setConversations((prev) => {
               const exists = prev.some((c) => c.id === ev.conversation.id);
               if (exists) {
@@ -397,6 +446,10 @@ export function App() {
     return conversation?.bot?.name ?? conversation?.title ?? "Rex";
   }, [conversations, activeId]);
 
+  useEffect(() => {
+    document.title = activeId ? `${activeTitle} · Rex` : "Rex";
+  }, [activeId, activeTitle]);
+
   return (
     <>
       <AppShell
@@ -482,6 +535,23 @@ export function App() {
               <Group gap={4} wrap="nowrap">
                 <Tooltip label="Rex Computer"><ActionIcon aria-label="Toggle computer drawer" aria-expanded={showComputer} variant={showComputer ? "light" : "subtle"} size={44} onClick={() => setShowComputer(!showComputer)}><IconComputer size={26} /></ActionIcon></Tooltip>
                 {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
+                {activeId && activeConversation ? (
+                  <Tooltip label="Copy link">
+                    <ActionIcon
+                      size={44}
+                      variant="subtle"
+                      aria-label="Copy link"
+                      onClick={() => {
+                        const url = absoluteUrl(conversationPath(activeConversation));
+                        void navigator.clipboard.writeText(url).then(() => {
+                          notifications.show({ message: "Link copied", autoClose: 1800 });
+                        }).catch(() => setError("Could not copy link."));
+                      }}
+                    >
+                      <IconLink size={24} />
+                    </ActionIcon>
+                  </Tooltip>
+                ) : null}
               {activeId ? (
                 <Tooltip label="Delete conversation">
                   <ActionIcon
@@ -767,6 +837,7 @@ export function App() {
         setGroupEditor(null);
         setConversations((prev) => [group, ...prev.filter((c) => c.id !== group.id)]);
         setActiveId(group.id);
+        syncUrl(conversationPath(group), isNew ? "push" : "replace");
         if (isNew) { setThread([]); setDraft(""); attachments.clear(); setError(null); }
       }} /> : null}
       {botEditor ? <BotEditor initial={botEditor === "new" ? undefined : botEditor} existingNames={conversations.filter((bot) => bot.kind !== "group").map((bot) => bot.bot?.name ?? bot.title)} existingColors={conversations.filter((bot) => bot.kind !== "group").map((bot) => bot.bot?.color ?? "")} onClose={() => setBotEditor(null)} onSave={(bot) => {
@@ -774,6 +845,7 @@ export function App() {
         setBotEditor(null);
         setConversations((previous) => [bot, ...previous.filter((item) => item.id !== bot.id)]);
         setActiveId(bot.id);
+        syncUrl(conversationPath(bot), isNew ? "push" : "replace");
         if (isNew) { setThread([]); setDraft(""); attachments.clear(); setError(null); }
       }} /> : null}
 
