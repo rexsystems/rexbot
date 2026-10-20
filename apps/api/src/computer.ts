@@ -10,6 +10,7 @@ import { buildTemplate, QemuHost, QemuMachine, type TemplateInfo } from "./compu
 import { sshRunner, tunnelOpener } from "./computer/ssh.js";
 import { dataDirectory, db, nowIso } from "./db.js";
 import { getAppSettings } from "./appSettings.js";
+import { ensureEgressProxy, GUEST_PROXY } from "./computer/egress.js";
 
 const IMAGE = "docker.io/library/python:3.13-alpine";
 const LABEL = "app.rex.computer";
@@ -264,9 +265,13 @@ export class ComputerFleet {
     const fleet = this;
     const power = {
       label: "Your Rex Computer",
-      state: () => machine.state(),
+      async state() {
+        await ensureEgressProxy();
+        return machine.networkRestricted() ? machine.state() : "stopped" as const;
+      },
       async start() {
         await fleet.ensureCapacity(row.owner_id);
+        if (machine.pid() && !machine.networkRestricted()) await machine.stop();
         if (!fs.existsSync(machine.diskPath)) {
           // A new disk always uses the newest template.
           const template = fleet.template;
@@ -287,7 +292,7 @@ export class ComputerFleet {
     };
     const ssh = { host: "127.0.0.1", user: "rex", port: row.ssh_port, keyFile: this.host.keyPath, knownHostsFile: machine.knownHostsPath };
     const kvm = this.host.kvmUsable();
-    return new DesktopComputer(power, (args, input, timeout) => sshRunner(ssh)(args, input, timeout), (local, remote) => tunnelOpener(ssh)(local, remote), { bootTimeoutMs: kvm ? 240_000 : 900_000 });
+    return new DesktopComputer(power, (args, input, timeout) => sshRunner(ssh)(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, `HTTP_PROXY=${GUEST_PROXY}`, `HTTPS_PROXY=${GUEST_PROXY}`, "no_proxy=localhost,127.0.0.1", `CHROMIUM_FLAGS=--proxy-server=${GUEST_PROXY}`, ...args], input, timeout), (local, remote) => tunnelOpener(ssh)(local, remote), { bootTimeoutMs: kvm ? 240_000 : 900_000 });
   }
 
   /** Refuses to boot past the admin's limit on running VMs. */

@@ -61,7 +61,7 @@ test("Google settings and Live audio handshake, tools, transcripts, mute and cle
   });
   await page.goto("/app");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("tab", { name: "Voice and memory" }).click();
+  await page.getByRole("tab", { name: "Voice", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Embedding model", exact: true })).toHaveValue("gemini-embedding-2");
   await expect(page.getByRole("textbox", { name: "Live voice model", exact: true })).toHaveValue("gemini-3.8-live");
   await page.getByLabel("Google AI Studio API key", { exact: true }).fill("test-only-google-key");

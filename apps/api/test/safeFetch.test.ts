@@ -25,8 +25,7 @@ test("bots cannot fetch the host or follow redirects into it", async () => {
     await assert.rejects(safeGet(`http://[::1]:${port}/`, options), /private address/);
     await assert.rejects(safeGet("file:///etc/passwd", options), /Only http/);
     process.env.REX_ALLOW_PRIVATE_FETCH = "1";
-    const allowed = await safeGet(`http://localhost:${port}/`, options);
-    assert.equal(allowed.body.toString(), "local secret");
+    await assert.rejects(safeGet(`http://localhost:${port}/`, options), /private address/, "legacy provider settings cannot lift the bot's host boundary");
   } finally {
     delete process.env.REX_ALLOW_PRIVATE_FETCH;
     server.close();

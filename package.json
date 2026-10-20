@@ -5,7 +5,8 @@
   "packageManager": "pnpm@10.33.2",
   "scripts": {
     "dev": "pnpm --filter @rex/shared build && pnpm --parallel --filter api --filter web dev",
-    "test": "pnpm --filter api test && pnpm --filter web test",
+    "test": "pnpm --filter api test && pnpm --filter web test && pnpm --filter desktop test",
+    "audit": "pnpm audit --audit-level=low",
     "dev:api": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
     "dev:desktop": "pnpm --filter desktop tauri:dev",

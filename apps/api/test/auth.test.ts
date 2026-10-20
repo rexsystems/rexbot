@@ -24,6 +24,7 @@ test("first account is admin, sign-up follows the admin setting, and accounts ne
   };
   try {
     assert.equal((await call("/conversations")).status, 401);
+    assert.equal((await app.request("/auth/state", { headers: { Origin: "null" } })).status, 403, "guest sandbox scripts cannot call account APIs");
     let state = await call("/auth/state");
     assert.equal(state.json.needsSetup, true);
     assert.equal(state.json.signupOpen, true);
@@ -33,6 +34,7 @@ test("first account is admin, sign-up follows the admin setting, and accounts ne
     const admin = await call("/auth/signup", { body: { email: "Alex@Example.com", name: "Alex", password: "correct horse" } });
     assert.equal(admin.status, 201);
     assert.equal(admin.json.user.role, "admin");
+    assert.equal(admin.json.token, undefined, "session credentials stay in the HttpOnly cookie");
     assert.equal(admin.json.user.email, "alex@example.com");
     assert.match(admin.cookie ?? "", /^rex_session=/);
     const adminConversations = await call("/conversations", { cookie: admin.cookie });

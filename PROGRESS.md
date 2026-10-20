@@ -29,19 +29,19 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [x] Idle shutdown (off by default, the desktop stays on like before), per-user CPU/RAM/disk limits, max running VMs (app settings; UI in Phase 3).
 - [x] `scripts/qemu/setup-host.sh` (installs packages, checks KVM), docs in `docs/qemu-computer.md`, `pnpm --filter api build-image` CLI.
 - [x] Remove Proxmox code, scripts, env vars, and tests.
-- [ ] End-to-end check on a real host: image build + per-user VM boot + screen (running, see below).
+- [x] Live per-user VM boot, network isolation, noVNC mouse/keyboard control, and guest file verification using the provisioned template.
 
 ### Phase 2: Accounts
 - [x] `users`, `sessions`, `app_settings` tables; scrypt password hashes; HttpOnly session cookie
-      (Bearer token also accepted, used by the desktop shell whose webview is a different site).
+      (Bearer token also accepted by the API; the desktop now uses same-origin website cookies).
 - [x] Sign in / sign up screens in the current style, account menu (name, password, sign out). First account
       becomes admin. Sign-up is closed by default; admin opens it (UI in Phase 3, setting `signupMode`).
 - [x] Every conversation, bot, group, memory, upload, and computer is scoped to its owner (404 for others,
       admins included). Existing single-user data is assigned to the first admin.
 - [x] `http_fetch` refuses private/loopback/metadata addresses, re-checked on each redirect and pinned at DNS
-      lookup (no rebinding). `REX_ALLOW_PRIVATE_FETCH=1` lifts it on a single-user box.
+      lookup (no rebinding). The legacy private-provider override no longer lifts bot fetch boundaries.
 - [x] `REX_HOST` binding. API app split into `app.ts` (testable) and `index.ts` (server).
-- [ ] Serve the built web app from the API for a single-origin deploy (`VITE_API_URL=same-origin` is ready).
+- [x] Serve the built web app from the API for a single-origin deploy.
 - [ ] Invite-only sign-up mode (admin-created accounts work through the admin panel).
 
 ### Phase 3: Admin panel (`/admin`)
@@ -87,7 +87,7 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [x] The bot knows the current date and time in the user's zone (browser zone, remembered per user).
 - [x] Skills: per-account instruction packs (Settings → Skills). Bots see names and "when to use" in the prompt
       and pull full instructions with `load_skill`, so long skills don't cost tokens on every turn.
-- [ ] Better bot rules in the system prompt.
+- [x] Guest-only autonomy, concise replies, silent instruction application, and relevant proactive routines without duplicates or recursive scheduling.
 - [ ] Model vision for image attachments where the provider supports it.
 
 ## Done
@@ -108,23 +108,21 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 ## In progress
 
 - Phase 1 verification on the dev box (nested KVM hangs here, so `REX_QEMU_ACCEL=tcg`). Found and fixed:
-  guests tried IPv6 first on an IPv6-less host (now `ipv6=off` unless `REX_QEMU_IPV6=1`), and `apt-get update`
+  guests tried IPv6 first on an IPv6-less host (now `ipv6=off`), and `apt-get update`
   failures were silent (now fatal). On this box apt's HTTPS transport times out through the sandbox proxy while
   curl over HTTPS works, so the build here runs with `REX_GUEST_APT_HTTP=1` (GPG-verified packages over http).
 
 ## Known gaps
 
 - Tavily and Google keys still live in browser local storage (model keys moved server-side in Phase 4).
-- In the desktop app, `<img>` previews of uploads can't send the Bearer token; previews need a signed URL (todo).
-- Playwright tests that need the Podman computer fail on hosts without Podman (they did before accounts too).
+- Native desktop windows have not been manually exercised on Windows or macOS; Linux installers build successfully.
 
 - Phase 5: `integrations/cursor.ts` (Cloud Agents v1, Basic auth, `REX_CURSOR_API_URL` override for tests),
   routes `GET/PUT/DELETE /integrations/cursor`, `test/cursor.test.ts` (fake Cursor server), web `CursorCard.tsx`.
 
 - Phase 6 (routines): `chatTurn.ts` (the chat turn, shared by `POST /chat` and routines), `routines.ts`
   (table, schedule math, runner, `routine` tool), `routes/routines.ts`, `test/routines.test.ts`, web `RoutinesDrawer.tsx`.
-  Known gaps: an open chat doesn't live-refresh when a routine posts (reopen it, or use Run now, which refreshes);
-  routines use the server-side provider connection, and web search in routines needs the Tavily key that still lives in
+  Open chats poll for routine results. Routines use the server-side provider connection, and web search in routines needs the Tavily key that still lives in
   the browser (see Known gaps).
 
 - Phase 6 (skills): `skills.ts`, `routes/skills.ts`, `test/skills.test.ts`, web `SkillsPanel.tsx`.
@@ -146,8 +144,13 @@ OpenAI UI guidelines.
 
 ## Where I stopped
 
-Phase 5, Phase 6 routines and skills committed. Next: better bot rules, vision for image attachments, then moving
-the Tavily/Google keys server-side so routines can search.
+Desktop website connections, cookie-only web authentication, dependency upgrades, autonomous routine guidance,
+DSML parsing, guest network boundaries, and click-to-open computer controls are implemented. DSML fixes were
+pushed as `18ab9e8`. Linux DEB/RPM desktop installers build successfully. The live VM network check passed;
+the live noVNC check verified browser typing by reading a file written in the guest. The full suite passes:
+40 API tests, 14 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
+VM image. npm audits report no known vulnerabilities, and no workspace packages are outdated.
+Vision and server-side Tavily/Google settings remain future work. Deployment and boundaries: `docs/desktop.md`.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

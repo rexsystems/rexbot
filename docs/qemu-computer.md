@@ -48,7 +48,7 @@ Force a mode with `REX_QEMU_ACCEL=tcg`. Admins see the detected mode in Admin â†
 | `REX_COMPUTER_BACKEND` | `qemu` | `qemu` (VM per account) or `podman` (offline sandbox per account, no screen) |
 | `REX_VM_DIR` | `<data>/vms` | Where images, templates, keys and VM disks live |
 | `REX_QEMU_ACCEL` | auto | `tcg` forces software emulation |
-| `REX_QEMU_IPV6` | off | `1` gives guests IPv6 through user-mode networking; leave off when the host has no IPv6, or apt in the guest stalls on AAAA addresses |
+| `REX_VM_PROXY_PORT` | `19382` | Loopback-only public-site proxy; keep stable across API restarts. Guest networking is IPv4-only |
 | `REX_GUEST_APT_HTTP` | off | `1` makes the image build use Debian mirrors over plain HTTP (packages stay GPG-verified). For networks whose proxy breaks apt's HTTPS |
 | `REX_QEMU_BINARY`, `REX_QEMU_IMG` | from `PATH` | Custom QEMU binaries |
 | `REX_QEMU_BASE_IMAGE_URL` | Debian 13 genericcloud amd64 | Cloud image used for new templates |
@@ -59,10 +59,7 @@ Admin â†’ Settings. New limits apply to a VM on its next boot; disks can grow bu
 ## Security model and limits
 
 - Each account's bots share that account's VM; different accounts never share a VM.
-- Guests use QEMU user-mode networking: outbound internet works, and only SSH is forwarded, bound to the host's
-  loopback. In user-mode networking the guest can reach services listening on the host's loopback through
-  `10.0.2.2`. The Rex API requires sign-in, but if the host runs other unauthenticated local services, put
-  them behind authentication or run Rex on a dedicated host.
+- Guests use restricted QEMU user-mode networking. Direct access to the host, private networks and raw outbound sockets is blocked. Public HTTP/HTTPS websites are available through a DNS-pinned proxy at `http://10.0.2.100:3128`. Only SSH initiated by the API is forwarded from host loopback. Details and upgrade behavior: [desktop deployment and isolation](desktop.md).
 - Bots have passwordless `sudo` inside their VM. That is root in the guest, not on the host.
 - **Reset computer** (admin) deletes the overlay disk; the next start creates a fresh VM from the newest template.
 - Only x86_64 guests are built today.

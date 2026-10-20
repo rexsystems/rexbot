@@ -36,7 +36,7 @@ function guardedLookup(hostname: string, options: object, callback: (error: Node
     if (error) return callback(error, "");
     const list = addresses as LookupAddress[];
     const bad = list.find((entry) => !isPublicAddress(entry.address));
-    if (bad && !privateFetchAllowed()) {
+    if (bad) {
       const refused = Object.assign(new Error(`${hostname} resolves to a private address (${bad.address}); bots can only fetch public sites.`), { code: "EPRIVATE" });
       return callback(refused, "");
     }
@@ -54,7 +54,7 @@ export async function safeGet(url: string, options: { timeoutMs: number; maxByte
   for (let hop = 0; hop <= (options.maxRedirects ?? 5); hop += 1) {
     if (current.protocol !== "http:" && current.protocol !== "https:") throw new Error("Only http(s) URLs are allowed.");
     const literal = current.hostname.replace(/^\[|\]$/g, "");
-    if (isIP(literal) && !isPublicAddress(literal) && !privateFetchAllowed()) throw new Error(`${literal} is a private address; bots can only fetch public sites.`);
+    if (isIP(literal) && !isPublicAddress(literal)) throw new Error(`${literal} is a private address; bots can only fetch public sites.`);
     const response = await requestOnce(current, options.headers ?? {}, Math.max(1, deadline - Date.now()), options.maxBytes);
     if (response.status >= 300 && response.status < 400 && response.location) {
       current = new URL(response.location, current);

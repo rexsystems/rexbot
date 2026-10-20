@@ -8,4 +8,5 @@ exec chromium \
   --no-first-run \
   --no-default-browser-check \
   --password-store=basic \
+  --proxy-server=http://10.0.2.100:3128 \
   "$@"

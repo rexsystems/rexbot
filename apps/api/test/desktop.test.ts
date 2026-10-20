@@ -140,6 +140,28 @@ test("owner control unlocks input and holds off bot actions until returned", asy
   assert.equal((await computer.execute("echo one", "bot_a")).exitCode, 0);
 });
 
+test("taking control wins over a bot action already waiting to lock the screen", async () => {
+  const guest = fakeGuest();
+  const original = guest.ssh;
+  let waiting!: () => void;
+  let resume!: () => void;
+  const started = new Promise<void>((resolve) => { waiting = resolve; });
+  const gate = new Promise<void>((resolve) => { resume = resolve; });
+  guest.ssh = async (args, input, timeout) => {
+    if (args[1] === "lock") { waiting(); await gate; }
+    return original(args, input, timeout);
+  };
+  const { vm, computer } = computerWith(undefined, guest);
+  vm.setState("running");
+  const action = computer.input("bot_a", { action: "click", x: 10, y: 20 });
+  await started;
+  await computer.takeControl("bot_a");
+  resume();
+  await assert.rejects(action, /taken control/);
+  assert.equal(computer.sessionState("bot_a").locked, false);
+  assert.ok(!guest.calls.some((call) => call.args[1] === "input"));
+});
+
 test("input validation rejects malformed actions", () => {
   assert.throws(() => validateInput({ action: "drag" }), /action must be/);
   assert.throws(() => validateInput({ action: "click", x: 5 }), /both x and y/);

@@ -4,6 +4,7 @@ import type { Context, MiddlewareHandler } from "hono";
 import { nanoid } from "nanoid";
 import type { AuthUser, UserRole } from "@rex/shared";
 import { claimLegacyData, db, nowIso } from "./db.js";
+import { getAppSettings } from "./appSettings.js";
 
 const scrypt = promisify(scryptCallback) as (password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number; maxmem: number }) => Promise<Buffer>;
 
@@ -73,14 +74,16 @@ export function getUserRow(id: string) {
   return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
 }
 
-export async function createUser(input: { email: string; name: string; password: string; role?: UserRole }): Promise<AuthUser> {
+export async function createUser(input: { email: string; name: string; password: string; role?: UserRole; signup?: boolean }): Promise<AuthUser> {
   if (findUserByEmail(input.email)) throw new Error("An account with this email already exists.");
+  const passwordHash = await hashPassword(input.password);
   const first = userCount() === 0;
+  if (input.signup && !first && getAppSettings().signupMode !== "open") throw new Error("Sign-up is turned off. Ask an admin to create your account.");
   const row: UserRow = {
     id: nanoid(),
     email: input.email,
     name: input.name.trim(),
-    password_hash: await hashPassword(input.password),
+    password_hash: passwordHash,
     role: first ? "admin" : input.role ?? "user",
     status: "active",
     created_at: nowIso(),

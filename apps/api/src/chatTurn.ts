@@ -183,7 +183,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           if (visible.length > emittedAnswer.length) send({ type: "delta", text: visible.slice(emittedAnswer.length) });
           emittedAnswer = visible;
         };
-        const maxToolRounds = 6;
+        const maxToolRounds = 16;
 
         for (let round = 0; round < maxToolRounds; round++) {
           const toolAcc = new Map<

@@ -181,7 +181,7 @@ function record(id: string, result: { ok: boolean; error?: string }, at: string)
 export async function runRoutineNow(userId: string, id: string) {
   const routine = getRoutine(userId, id);
   if (!routine) return null;
-  const result = await runRoutine(routine, userId);
+  const result = await runRoutine(routine, userId).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error), busy: false }));
   if (!result.busy) record(id, result, nowIso());
   return { ...result, routine: getRoutine(userId, id)! };
 }
@@ -242,6 +242,8 @@ export function routineTool(userId: string | undefined, conversationId: string |
   try {
     if (action === "list") return JSON.stringify(listRoutines(userId, conversationId).map(summary));
     if (action === "create") {
+      const existing = listRoutines(userId, conversationId).find((routine) => routine.title.toLocaleLowerCase() === String(args.title ?? "").trim().toLocaleLowerCase() && routine.prompt.trim() === String(args.prompt ?? "").trim());
+      if (existing) return JSON.stringify({ existing: summary(existing), note: "This task already has a routine. Do not create another." });
       const hours = args.every_hours === undefined ? undefined : Number(args.every_hours);
       const schedule = hours !== undefined ? { kind: "interval" as const, hours } : { kind: "daily" as const, time: String(args.time ?? ""), days: Array.isArray(args.days) ? args.days.map(Number) : undefined };
       const routine = createRoutine(userId, { conversationId, title: String(args.title ?? ""), prompt: String(args.prompt ?? ""), schedule, timeZone: timeZone ?? userTimeZone(userId) });

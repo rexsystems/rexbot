@@ -16,7 +16,7 @@ test("computer resize, owner control and memory settings work on desktop and mob
     if (route.request().method() === "POST") { actions.push(path.split("/").at(-1)!); return route.fulfill({ json: { botId: bot.id, locked: false } }); }
     return route.fulfill({ json: { botId: bot.id, width: 1280, height: 800, viewPath: "/computer/vnc/fixture/vnc_lite.html?view_only=1" } });
   });
-  await page.route(`${api}/computer/vnc/**`, (route) => route.fulfill({ contentType: "text/html", body: '<label>Desktop input<input aria-label="Desktop input"></label>' }));
+  await page.route(`${api}/computer/vnc/**`, (route) => route.fulfill({ contentType: "text/html", body: '<label>Desktop input<input aria-label="Desktop input"></label><script>document.querySelector("input").disabled = Boolean(new URLSearchParams(location.search).get("view_only"));</script>' }));
   await page.route(`${api}/memories`, (route) => route.fulfill({ json: memories }));
   await page.route(`${api}/memories/*`, (route) => { memories = memories.filter((item) => !route.request().url().endsWith(item.id)); return route.fulfill({ json: { ok: true } }); });
   await page.setViewportSize({ width: 1440, height: 950 });
@@ -37,16 +37,17 @@ test("computer resize, owner control and memory settings work on desktop and mob
   await page.reload();
   await expect(separator).toHaveAttribute("aria-valuenow", "390");
   const screen = page.locator('.computer-screen iframe');
-  await expect(screen).toHaveAttribute("src", /view_only=1/);
-  await page.getByRole("button", { name: "Take control", exact: true }).click();
-  await expect(screen).toHaveAttribute("src", /view_only=0/);
+  await expect(screen).toHaveAttribute("src", /view_only=true/);
+  await expect(page.getByRole("button", { name: "Enlarge screen", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Open Controls's computer", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Take control", exact: true }).click();
+  await expect(screen).not.toHaveAttribute("src", /view_only=/);
   await page.frameLocator('.computer-screen iframe').getByLabel("Desktop input").fill("Owner typing");
   await expect(page.frameLocator('.computer-screen iframe').getByLabel("Desktop input")).toHaveValue("Owner typing");
-  await page.getByRole("button", { name: "Enlarge screen" }).click();
-  await expect(page.getByRole("dialog").locator("iframe")).toHaveAttribute("src", /view_only=0/);
+  await expect(page.getByRole("dialog").locator("iframe")).not.toHaveAttribute("src", /view_only=/);
   await page.getByRole("dialog").getByRole("button", { name: "Return control" }).click();
   await page.keyboard.press("Escape");
-  await expect(screen).toHaveAttribute("src", /view_only=1/);
+  await expect(screen).toHaveAttribute("src", /view_only=true/);
   expect(actions).toContain("take-control");
   expect(actions).toContain("release-control");
   await expect(page.getByRole("button", { name: "Copy link", exact: true })).toHaveCount(0);
@@ -67,14 +68,16 @@ test("computer resize, owner control and memory settings work on desktop and mob
   await page.getByRole("button", { name: "Toggle computer drawer", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Take control", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Return control", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Return control", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/computer-controls-mobile.png" });
-  await page.getByRole("button", { name: "Close computer", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await request.delete(`${api}/conversations/${bot.id}`);
 });
 
 test("reload follows server work and routines execute through their saved provider", async ({ page, request }) => {
+  page.setDefaultTimeout(10_000);
   let finish: (() => void) | undefined;
   const waiting = new Promise<void>((resolve) => { finish = resolve; });
   const model = createServer(async (req, res) => {
@@ -85,7 +88,9 @@ test("reload follows server work and routines execute through their saved provid
     const user = body.messages.filter((item: { role: string }) => item.role === "user").at(-1).content;
     if (user === "Wait for reload") await waiting;
     res.setHeader("Content-Type", "text/event-stream");
-    res.end(`data: ${JSON.stringify({ choices: [{ delta: { content: user === "Wait for reload" ? "Work survived reload." : "Routine completed." } }] })}\n\ndata: [DONE]\n\n`);
+    const hasTool = body.messages.some((item: { role: string }) => item.role === "tool");
+    const content = user === "List routines" ? hasTool ? "Tool call completed." : '<｜DSML｜calls><｜DSML｜invoke name="routine"><｜DSML｜parameter name="action" string="true">list</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜calls>' : user === "Wait for reload" ? "Work survived reload." : "Routine completed.";
+    res.end(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`);
   });
   await new Promise<void>((resolve) => model.listen(0, "127.0.0.1", resolve));
   const connection = await (await request.post(`${api}/providers/connections`, { data: { provider: "custom", label: "Routine fixture", baseUrl: `http://127.0.0.1:${(model.address() as AddressInfo).port}`, defaultModel: "fixture" } })).json();
@@ -100,16 +105,22 @@ test("reload follows server work and routines execute through their saved provid
     finish!();
     await expect(page.getByText("Work survived reload.", { exact: true })).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "Working…" })).toHaveCount(0);
+    await page.getByRole("textbox", { name: "Message Reload" }).fill("List routines");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(page.getByText("Tool call completed.", { exact: true })).toBeVisible();
+    await expect(page.getByText(/DSML/)).toHaveCount(0);
     await page.getByRole("button", { name: "Routines", exact: true }).click();
     await page.getByRole("button", { name: "New routine", exact: true }).click();
-    await page.getByLabel("Name", { exact: true }).fill("Hourly check");
-    await page.getByLabel("What to do", { exact: true }).fill("Check status");
+    await page.getByRole("textbox", { name: /^Name/ }).fill("Hourly check");
+    await page.getByRole("textbox", { name: /^What to do/ }).fill("Check status");
     await page.getByRole("button", { name: "Create", exact: true }).click();
     await page.getByRole("button", { name: "Run now", exact: true }).click();
     await expect(page.getByText(/^Ran /)).toBeVisible();
-    await page.getByRole("switch", { name: "Pause Hourly check" }).click();
+    await page.getByRole("switch", { name: "Pause Hourly check" }).focus();
+    await page.keyboard.press("Space");
     await expect(page.getByRole("switch", { name: "Resume Hourly check" })).toBeVisible();
-    await page.getByRole("switch", { name: "Resume Hourly check" }).click();
+    await page.getByRole("switch", { name: "Resume Hourly check" }).focus();
+    await page.keyboard.press("Space");
     await page.getByRole("button", { name: "Close routines" }).click();
     await expect(page.getByText("Routine completed.", { exact: true })).toBeVisible();
   } finally {

@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { ensureEgressProxy, GUEST_PROXY } from "./egress.js";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
@@ -173,6 +174,7 @@ export class QemuHost {
     if (!tools.qemuImg) problems.push("qemu-img is not installed.");
     if (!tools.isoTool) problems.push("No cloud-init seed tool (cloud-localds, genisoimage or xorriso).");
     if (!tools.ssh) problems.push("The OpenSSH client (ssh, ssh-keygen) is not installed.");
+    if (!which("nc") && !which("ncat")) problems.push("Netcat (nc or ncat) is required for the public-site proxy.");
     if (!kvm && this.env.REX_QEMU_ACCEL !== "tcg") problems.push("/dev/kvm is not usable by this user, so VMs run in slow software emulation. Add the user to the kvm group.");
     return { ...tools, kvm, accel: kvm ? "kvm" : "tcg", root: this.root, template: this.template(), problems };
   }
@@ -237,6 +239,10 @@ export function cloudConfig(spec: { hostname: string; publicKey: string }): stri
     users: [{ name: "rex", gecos: "Rex Computer", groups: ["sudo"], shell: "/bin/bash", sudo: "ALL=(ALL) NOPASSWD:ALL", lock_passwd: true, ssh_authorized_keys: [spec.publicKey] }],
     growpart: { mode: "auto", devices: ["/"] },
     resize_rootfs: true,
+    write_files: [
+      { path: "/etc/apt/apt.conf.d/90rex-proxy", content: `Acquire::http::Proxy "${GUEST_PROXY}";\nAcquire::https::Proxy "${GUEST_PROXY}";\n` },
+      { path: "/etc/profile.d/rex-proxy.sh", content: `export http_proxy=${GUEST_PROXY}\nexport https_proxy=${GUEST_PROXY}\nexport HTTP_PROXY=${GUEST_PROXY}\nexport HTTPS_PROXY=${GUEST_PROXY}\nexport no_proxy=localhost,127.0.0.1\n` },
+    ],
   };
   return `#cloud-config\n${JSON.stringify(config, null, 2)}\n`;
 }
@@ -295,6 +301,16 @@ export class QemuMachine implements VmPower {
     return this.serialize("starting", () => this.boot());
   }
 
+  networkRestricted(): boolean {
+    const pid = this.pid();
+    if (!pid) return true;
+    try {
+      const args = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      return args.includes("restrict=on") && args.includes("guestfwd=tcp:10.0.2.100:3128-cmd:");
+    }
+    catch { return false; }
+  }
+
   private async boot() {
     fs.mkdirSync(this.dir, { recursive: true });
     const key = await this.host.ensureKey();
@@ -310,6 +326,9 @@ export class QemuMachine implements VmPower {
     fs.rmSync(this.pidPath, { force: true });
     fs.rmSync(this.qmpPath, { force: true });
     const kvm = this.host.kvmUsable();
+    const proxyPort = await ensureEgressProxy();
+    const relay = which("nc") || which("ncat");
+    if (!relay) throw new Error("Netcat is required for isolated VM internet access. Run scripts/qemu/setup-host.sh.");
     const args = [
       "-name", `rex-${this.spec.name},process=rex-vm-${this.spec.name}`,
       "-machine", `q35,accel=${kvm ? "kvm" : "tcg"}`,
@@ -318,9 +337,8 @@ export class QemuMachine implements VmPower {
       "-m", String(this.spec.memoryMb),
       "-drive", `if=virtio,file=${this.diskPath},format=qcow2,discard=unmap,cache=writeback`,
       "-drive", `file=${path.join(this.dir, "seed.iso")},media=cdrom,readonly=on`,
-      // User-mode networking: outbound internet through the host, only SSH reachable, and only from loopback.
-      // IPv6 is off unless asked for: on hosts without IPv6, guests otherwise try AAAA addresses first and apt stalls.
-      "-netdev", `user,id=net0,hostname=${this.spec.hostname},hostfwd=tcp:127.0.0.1:${this.spec.sshPort}-:22${this.host.ipv6() ? "" : ",ipv6=off"}`,
+      // Outbound traffic can reach only the public-site proxy, even if the guest changes its firewall.
+      "-netdev", `user,id=net0,restrict=on,ipv6=off,hostname=${this.spec.hostname},hostfwd=tcp:127.0.0.1:${this.spec.sshPort}-:22,guestfwd=tcp:10.0.2.100:3128-cmd:${relay} 127.0.0.1 ${proxyPort}`,
       "-device", "virtio-net-pci,netdev=net0",
       "-device", "virtio-rng-pci",
       "-display", "none",

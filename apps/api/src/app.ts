@@ -24,6 +24,7 @@ import { botRoutes } from "./routes/bots.js";
 import { groupRoutes } from "./routes/groups.js";
 import { activeChats } from "./groups.js";
 import { voiceRoutes } from "./routes/voice.js";
+import { webApp } from "./webApp.js";
 
 export const app = new Hono<AppEnv>();
 const port = Number(process.env.PORT || 8787);
@@ -32,7 +33,8 @@ export const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173",
 
 app.use("*", async (c, next) => {
   const origin = c.req.header("Origin");
-  if (origin && !allowedOrigins.includes(origin)) return c.json({ error: "Origin not allowed" }, 403);
+  const sandboxAsset = origin === "null" && c.req.method === "GET" && /^\/computer\/vnc\/[A-Za-z0-9_-]{16,64}\//.test(c.req.path);
+  if (origin && !sandboxAsset && !allowedOrigins.includes(origin)) return c.json({ error: "Origin not allowed" }, 403);
   if (["POST", "PUT", "PATCH"].includes(c.req.method) && !c.req.header("Content-Type")?.startsWith("application/json") && !c.req.path.startsWith("/uploads")) {
     return c.json({ error: "application/json required" }, 415);
   }
@@ -50,6 +52,7 @@ app.use(
 );
 
 app.get("/health", (c) => c.json({ ok: true, name: "rex-api" }));
+app.use("*", webApp());
 app.route("/", authRoutes);
 app.route("/", computerViewRoutes);
 

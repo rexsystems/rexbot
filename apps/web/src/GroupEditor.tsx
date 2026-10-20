@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ActionIcon, Alert, Button, Group, Loader, Modal, MultiSelect, Paper, Stack, Tabs, Text, TextInput, Tooltip } from "@mantine/core";
 import type { BotExchange, Conversation } from "@rex/shared";
+import { botReplyText } from "@rex/shared";
 import { groupExchanges, saveGroup } from "./api";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { BotEditor } from "./BotEditor";
@@ -55,7 +56,7 @@ export function GroupEditor({ initial, bots, onBotCreated, onClose, onSave }: { 
           <Text size="xs" c="dimmed">{new Date(exchange.createdAt).toLocaleString()}</Text>
           <Text style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{exchange.message}</Text>
           <Text fw={600} size="sm">{exchange.toName}'s reply</Text>
-          <MarkdownMessage content={exchange.reply} />
+          <MarkdownMessage content={botReplyText(exchange.reply, exchange.toName)} />
         </Stack></Paper>)}
       </Stack></Tabs.Panel> : null}
     </Tabs>

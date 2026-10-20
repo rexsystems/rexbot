@@ -9,13 +9,13 @@ need_sudo() { if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi; }
 if command -v apt-get >/dev/null 2>&1; then
   need_sudo apt-get update -q
   need_sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
-    qemu-system-x86 qemu-utils cloud-image-utils openssh-client
+    qemu-system-x86 qemu-utils cloud-image-utils openssh-client netcat-openbsd
 elif command -v dnf >/dev/null 2>&1; then
-  need_sudo dnf install -y qemu-kvm qemu-img cloud-utils openssh-clients
+  need_sudo dnf install -y qemu-kvm qemu-img cloud-utils openssh-clients nmap-ncat
 elif command -v pacman >/dev/null 2>&1; then
-  need_sudo pacman -S --needed --noconfirm qemu-base cloud-image-utils openssh
+  need_sudo pacman -S --needed --noconfirm qemu-base cloud-image-utils openssh openbsd-netcat
 elif command -v zypper >/dev/null 2>&1; then
-  need_sudo zypper install -y qemu-x86 qemu-tools xorriso openssh-clients
+  need_sudo zypper install -y qemu-x86 qemu-tools xorriso openssh-clients netcat-openbsd
 else
   echo "Unknown package manager. Install qemu-system-x86_64, qemu-img, cloud-localds (or genisoimage/xorriso) and ssh." >&2
   exit 1

@@ -140,7 +140,7 @@ export const CURSOR_AGENT_TOOL: ToolDefinition = {
 
 export const ROUTINE_TOOL: ToolDefinition = {
   name: "routine",
-  description: "Manage scheduled routines for this chat: a routine re-sends a prompt to you on a schedule (daily at a time, on chosen weekdays, or every N hours) and you answer it then, with your tools. Use it ONLY when the user asks for something recurring or later (\"every morning send me...\", \"remind me on Fridays...\", \"check this every 6 hours\"). Times are in the user's time zone. Write the prompt as a self-contained instruction to your future self. Confirm the schedule back to the user after creating it. action=list shows this chat's routines; pause, resume and delete need routine_id from list or create.",
+  description: "Manage scheduled routines for this chat. A routine sends a self-contained task to your future self daily, on selected weekdays, or every N hours. Create one when the user asks, or when useful ongoing follow-up directly serves their task. First list existing routines to avoid duplicates. Do not schedule unrelated activity or ordinary one-off questions. Choose the least frequent useful schedule in the user's time zone and confirm its name, task and schedule only after success. action=list shows this chat's routines; pause, resume and delete need routine_id from list or create. Scheduled runs cannot create more routines.",
   parameters: {
     type: "object",
     properties: {

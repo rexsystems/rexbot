@@ -45,10 +45,10 @@ authRoutes.post("/auth/signup", async (c) => {
   if (!validName(input.name)) return c.json({ error: "Enter a name of 1-64 characters." }, 400);
   if (!validPassword(input.password)) return c.json({ error: "Use a password of at least 8 characters." }, 400);
   try {
-    const user = await createUser({ email, name: input.name, password: input.password });
+    const user = await createUser({ email, name: input.name, password: input.password, signup: true });
     const session = createSession(user.id, c.req.header("User-Agent"));
     c.header("Set-Cookie", sessionCookie(c, session.token, session.expiresAt));
-    return c.json({ user, token: session.token }, 201);
+    return c.json({ user }, 201);
   } catch (error) {
     return c.json({ error: error instanceof Error ? error.message : String(error) }, 409);
   }
@@ -70,7 +70,7 @@ authRoutes.post("/auth/login", async (c) => {
   clearLoginFailures(key);
   const session = createSession(row.id, c.req.header("User-Agent"));
   c.header("Set-Cookie", sessionCookie(c, session.token, session.expiresAt));
-  return c.json({ user: toAuthUser(row), token: session.token });
+  return c.json({ user: toAuthUser(row) });
 });
 
 authRoutes.post("/auth/logout", (c) => {

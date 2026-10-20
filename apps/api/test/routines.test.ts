@@ -76,6 +76,8 @@ test("routines post their prompt to the bot on schedule and stay private to thei
 
     const viaTool = JSON.parse(routineTool(TEST_USER.id, bot.id, "UTC", { action: "create", title: "Check", prompt: "Check the build", every_hours: 6 }));
     assert.equal(viaTool.created.schedule, "every 6 hours");
+    const duplicate = JSON.parse(routineTool(TEST_USER.id, bot.id, "UTC", { action: "create", title: "Check", prompt: "Check the build", every_hours: 6 }));
+    assert.equal(duplicate.existing.routine_id, viaTool.created.routine_id);
     assert.match(routineTool(TEST_USER.id, "someone-elses-chat", "UTC", { action: "list" }), /^\[\]$/);
     assert.match(routineTool(TEST_USER.id, "another-chat", "UTC", { action: "delete", routine_id: viaTool.created.routine_id }), /no routine/);
     assert.equal(JSON.parse(routineTool(TEST_USER.id, bot.id, "UTC", { action: "pause", routine_id: viaTool.created.routine_id })).updated.enabled, false);

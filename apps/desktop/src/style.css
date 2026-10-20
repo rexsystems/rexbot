@@ -1,0 +1,19 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; color: #ebe7df; background: #11100e; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.connection { max-width: 540px; margin: 0 auto; padding: 36px 28px; }
+.brand { color: #f58b42; font-weight: 700; margin: 0 0 28px; }
+h1 { font-size: clamp(1.5rem, 5vw, 2rem); line-height: 1.2; margin: 0 0 16px; }
+p { line-height: 1.5; }
+.intro, .privacy, .hint { color: #b8b2a6; }
+.intro { margin-bottom: 28px; }
+label { display: block; margin-bottom: 8px; font-weight: 600; }
+input { width: 100%; min-height: 48px; padding: 10px 12px; border: 1px solid #82796b; border-radius: 6px; background: #25221d; color: #ebe7df; font: inherit; }
+input::placeholder { color: #b8b2a6; }
+.hint, .privacy { font-size: .875rem; }
+button { min-height: 48px; width: 100%; padding: 10px 16px; border: 0; border-radius: 6px; font: inherit; font-weight: 600; background: #f58b42; color: #21160e; cursor: pointer; }
+button:disabled { opacity: .65; cursor: wait; }
+input:focus-visible, button:focus-visible { outline: 2px solid #f5c39f; outline-offset: 3px; }
+#connection-error { color: #ffb3a6; overflow-wrap: anywhere; }
+#connection-status { font-size: .875rem; min-height: 21px; }
+.privacy { border-top: 1px solid #39352e; padding-top: 18px; margin-top: 18px; }

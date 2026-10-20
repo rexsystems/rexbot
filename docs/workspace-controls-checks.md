@@ -1,0 +1,22 @@
+# Workspace and desktop verification
+
+Scope: computer resizing and owner input, memory settings, routines, reload recovery, DSML parsing, remote desktop connections, authentication, guest networking, and dependency upgrades.
+
+- Hard Gate PASS: browser tests exercise mouse and keyboard resize with persisted 320 to 600 px bounds, preview click, take/return control, memory search/delete in Settings, routine create/run/pause/resume, and reload recovery. Axe reports no tested WCAG A/AA violations in Settings and the desktop launcher. Tested narrow layouts have no horizontal overflow. Launcher tests cover saved addresses, connecting, errors, retry, and unavailable native bridge states.
+- Purpose Gate PASS: existing warm dark colors, IBM Plex typography, icons, and Settings navigation are retained for workspace continuity. Bounded resizing preserves chat space; Memory belongs in Settings because it manages saved account context. The preview opens its own screen, and the orange control action identifies who can send input. The launcher's single URL field separates website selection from the website's own authentication. No decorative assets or marketing sections were introduced.
+- Liveliness PASS: ENERGY 1 / RHYTHM 1 / MOTION 1 follows the established workspace. Chat remains the main workspace focus; the launcher focuses on the website field. Existing spacing separates controls and status, and the orange action accent and warm surfaces repeat the product identity. Screenshots of workspace controls, the narrow launcher, and the live VM screen were visually inspected.
+- Craftsmanship PASS: `pnpm build`, `pnpm typecheck`, 40 API tests, 14 web tests, 2 launcher browser tests, 2 Rust tests, Linux DEB/RPM release builds, and `git diff --check` pass. DSML regression tests cover character-level stream splits, command preservation, reasoning, native calls, and ordinary HTML. The npm full, production, and development audits report zero known vulnerabilities; `pnpm -r outdated` is empty.
+
+## Live guest checks
+
+`apps/api/test/vm-isolation.live.ts` booted a fresh overlay of the provisioned guest template. Public HTTPS succeeded; private and metadata proxy requests were rejected; direct access to a host canary was blocked, with zero canary hits. The guest's QEMU network is restricted, with a fixed relay to a public HTTP/HTTPS proxy. The private-provider configuration override does not lift bot fetch restrictions.
+
+`apps/web/test/computer.live.spec.ts` used real QEMU, guest noVNC modules, and WebSocket traffic. It opened the preview, took control, clicked the terminal, typed a command, verified the resulting file inside the guest, and returned control. The sandboxed viewer's origin was confirmed opaque (`null`). A separate arbitration regression test verifies that taking control wins over a bot action waiting on the guest screen lock.
+
+Run these checks with `REX_TEST_VM_TEMPLATE` pointing to a provisioned template and an unused `REX_VM_PROXY_PORT`; see the test files for setup. The normal browser suite skips the live test when no template is provided.
+
+## Limits
+
+The launcher browser tests simulate the native command bridge. Rust validation tests and actual Linux installer builds pass, but the native application's remote login flow has not been manually tested across desktop operating systems. Windows and macOS installers were not built here. No production website was deployed during this work; the server needs deployment and restart to apply the changes. Existing VMs with unrestricted network arguments restart on next use while retaining their disks.
+
+Taking control blocks new bot input; a command already executing may finish. Routine execution requires the API to remain running and a server-saved model connection. Bot behavior rules are instructions, not a guarantee about every model reply. Dependency audits describe currently known npm advisories, not a general security guarantee. The production web build retains its large JavaScript chunk warning.

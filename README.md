@@ -88,7 +88,7 @@ The image build downloads the Debian 13 cloud image, installs the desktop once, 
 - VMs start when a bot needs them and keep running across API restarts. An admin can enable idle shutdown.
 - The screen streams through the Rex API over SSH; noVNC only listens on the VM's localhost.
 
-The VM has outbound network access, and an account's bots run as the same Linux user, so they can read each other's folders. Accounts never share a VM.
+The VM can reach public websites through a filtered proxy. Direct host/private-network traffic is blocked outside the guest. An account's bots run as the same Linux user, so they can read each other's folders. Accounts never share a VM.
 
 ### Podman sandbox
 
@@ -128,16 +128,13 @@ Image display is independent of the model. **The current model adapter is text-o
 
 ## Desktop
 
-Install Rust and the [Tauri prerequisites for your platform](https://v2.tauri.app/start/prerequisites/), then keep the API running:
+Install Rust and the [Tauri prerequisites for your platform](https://v2.tauri.app/start/prerequisites/), then start the desktop app:
 
 ```bash
-pnpm --filter @rex/shared build
-pnpm dev:api
-# In another terminal:
 pnpm dev:desktop
 ```
 
-The desktop shell uses the same interface and local API as the browser version. The computer backends run on the Rex API host: QEMU needs a Linux host (KVM recommended) with the `ssh` client; Podman needs rootless Podman.
+Enter your Rex website's HTTPS address, then sign in or create an account if registration is open. The desktop app remembers the address and opens the website without native shell or filesystem permissions. It does not need a local API. The computer backends run in isolated guests on the website's API host. Connection, deployment and security details: [docs/desktop.md](docs/desktop.md).
 
 ## Development
 
@@ -168,17 +165,17 @@ Avatar meshes share **one WebGL renderer**. Animated visible characters follow t
 - The Google key is sent to the local API for embeddings and ephemeral-token issuance; the live WebSocket uses only the short-lived token. Live settings stay in API memory for the session and any in-flight tool work. Google receives memory text for embeddings and microphone audio/context during voice calls.
 - Group history and private exchanges use the same configured provider. A private recipient receives its profile, the passed task, and up to six recent exchanges with that teammate in the shared group, rather than either bot's personal conversation history. Private exchanges are persisted locally and inspectable by the owner; "private" means outside the shared conversation, not hidden from the owner or model provider.
 - Every account has its own bots, groups, chats, memory, uploads, and computer; the API checks ownership on every request. Passwords are stored as scrypt hashes, sessions as SHA-256 hashes of a random token in an HttpOnly cookie. Admins manage accounts but do not read other people's chats.
-- Bots' `http_fetch` refuses loopback, private, link-local, and metadata addresses, including after redirects (`REX_ALLOW_PRIVATE_FETCH=1` lifts this on a single-user machine).
+- Bots' `http_fetch` refuses loopback, private, link-local, and metadata addresses, including after redirects. The VM's public-site proxy enforces the same boundary outside the guest.
 - The API binds to loopback and restricts browser origins. To host it for others, put it behind an HTTPS reverse proxy and set `REX_WEB_ORIGIN`.
 - Keys, user data, uploads, build outputs, and local agent configuration are excluded from the repository.
 
 ## Current scope
 
-Rexbot provides local chat, customizable bots, groups, private collaboration, Google live voice and memory embeddings, attachments, and an offline command workspace. Group messages get one public reply by default, from the first member or the first bot explicitly mentioned. `@everyone` gives each member one turn in group order. Requests in the same conversation cannot overlap. Each responding bot can use up to six tool rounds and four calls per round. A user turn permits at most six private requests total. Private recipients can use up to three tool rounds and cannot delegate recursively. Bots share the existing computer workspace and model settings; prompts guide behavior, while capability and answer quality depend on the configured model and available tools.
+Rexbot provides chat, customizable bots, groups, private collaboration, Google live voice and memory embeddings, attachments, scheduled routines, and isolated computer workspaces. Group messages get one public reply by default, from the first member or the first bot explicitly mentioned. `@everyone` gives each member one turn in group order. Requests in the same conversation cannot overlap. Each responding bot can use up to sixteen tool rounds and four calls per round. A user turn permits at most six private requests total. Private recipients can use up to three tool rounds and cannot delegate recursively. Prompts guide behavior, while capability and answer quality depend on the configured model and available tools.
 
 The text adapter preserves a provider's streamed `reasoning_content` through tool rounds and keeps model-scoped reasoning metadata for later turns. This supports [DeepSeek thinking-mode tool calls](https://api-docs.deepseek.com/guides/thinking_mode/). Metadata stays in local SQLite and is not part of visible chat messages or public conversation/private-exchange API responses. Reasoning from another provider/model is not forwarded. Speaker names are rendered by the interface; replies do not need to repeat `[Bot name]:` in their text.
 
-Scheduled/background conversations and model vision are not implemented yet; see `PROGRESS.md` for the plan. Changes are welcome through GitHub issues and pull requests.
+Scheduled routines are available through the Routines panel and the bot's routine tool. Bots can schedule useful follow-up for ongoing tasks, avoid duplicates, and report the schedule. The API must stay running and the account needs a server-saved model connection. Model vision remains unfinished; see `PROGRESS.md` for the plan. Changes are welcome through GitHub issues and pull requests.
 
 ## License
 

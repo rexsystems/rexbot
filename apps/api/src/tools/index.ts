@@ -1,17 +1,12 @@
 import fs from "node:fs";
 import { safeGet } from "./safeFetch.js";
 import path from "node:path";
-import { createRequire } from "node:module";
+import { PDFParse } from "pdf-parse";
 import { isPreviewImage, type ClientSettings } from "@rex/shared";
 import { db } from "../db.js";
 import { computers, isDesktopComputer, UnavailableComputer } from "../computer.js";
 import { isReaction, setReaction } from "../reactions.js";
 import type { MessagingContext } from "../botMessaging.js";
-
-const require = createRequire(import.meta.url);
-const pdfParse = require("pdf-parse") as (
-  buf: Buffer,
-) => Promise<{ text: string }>;
 
 const FETCH_TIMEOUT_MS = 12_000;
 const FETCH_MAX_BYTES = 200_000;
@@ -86,7 +81,8 @@ async function readUpload(uploadId: string, ownerId: string | undefined): Promis
   const mime = row.mime_type;
   if (mime.includes("pdf") || row.filename.toLowerCase().endsWith(".pdf")) {
     const buf = fs.readFileSync(abs);
-    const parsed = await pdfParse(buf);
+    const parser = new PDFParse({ data: new Uint8Array(buf) });
+    const parsed = await parser.getText().finally(() => parser.destroy());
     const text = truncate(parsed.text || "(empty pdf)");
     db.prepare(`UPDATE uploads SET text_content = ? WHERE id = ?`).run(
       text,

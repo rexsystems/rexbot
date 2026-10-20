@@ -32,32 +32,21 @@ import type {
 
 const configuredBase = import.meta.env.VITE_API_URL;
 /** "same-origin" is for builds the API serves itself; otherwise the dev server and the desktop app talk to localhost:8787. */
-export const API_BASE = configuredBase === "same-origin" ? window.location.origin : configuredBase ?? "http://localhost:8787";
+export const API_BASE = configuredBase === "same-origin" || (!configuredBase && import.meta.env.PROD) ? window.location.origin : configuredBase ?? "http://localhost:8787";
 
 /** Fired when the session ends (expired, signed out elsewhere, account disabled). */
 export const SESSION_ENDED = "rex:session-ended";
 
-// Browsers keep the session in an HttpOnly cookie. The desktop app's webview is a different site
-// from the local API, so it cannot use that cookie and keeps the token itself instead.
 const TOKEN_KEY = "rex.sessionToken";
-const usesBearer = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-function authHeaders(headers?: HeadersInit): HeadersInit | undefined {
-  const token = usesBearer ? localStorage.getItem(TOKEN_KEY) : null;
-  if (!token) return headers;
-  const merged = new Headers(headers);
-  merged.set("Authorization", `Bearer ${token}`);
-  return merged;
+function clearLegacyToken() {
+  try { localStorage.removeItem(TOKEN_KEY); } catch { /* Storage may be disabled. */ }
 }
 
-function keepToken(token: string | undefined) {
-  if (!usesBearer) return;
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
+clearLegacyToken();
 
 export async function json<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: "include", ...init, headers: authHeaders(init?.headers) });
+  const res = await fetch(`${API_BASE}${path}`, { credentials: "include", ...init });
   if (res.status === 401 && !path.startsWith("/auth/")) window.dispatchEvent(new Event(SESSION_ENDED));
   if (!res.ok) {
     const text = await res.text();
@@ -141,7 +130,7 @@ export async function streamChat(opts: {
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       conversationId: opts.conversationId,
       respondTo: opts.respondTo,
@@ -187,11 +176,11 @@ export async function streamChat(opts: {
 const post = (body: unknown = {}): RequestInit => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 export const authState = () => json<AuthState>("/auth/state");
-type SignedIn = { user: AuthUser; token?: string };
-const remember = (result: SignedIn) => { keepToken(result.token); return { user: result.user }; };
+type SignedIn = { user: AuthUser };
+const remember = (result: SignedIn) => { clearLegacyToken(); return { user: result.user }; };
 export const signIn = (email: string, password: string) => json<SignedIn>("/auth/login", post({ email, password })).then(remember);
 export const signUp = (name: string, email: string, password: string) => json<SignedIn>("/auth/signup", post({ name, email, password })).then(remember);
-export const signOut = () => json<{ ok: boolean }>("/auth/logout", post()).finally(() => keepToken(undefined));
+export const signOut = () => json<{ ok: boolean }>("/auth/logout", post()).finally(clearLegacyToken);
 export const updateProfile = (name: string) => json<{ user: AuthUser }>("/auth/profile", post({ name }));
 export const changePassword = (current: string, next: string) => json<{ ok: boolean }>("/auth/password", post({ current, next }));
 

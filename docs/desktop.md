@@ -1,0 +1,54 @@
+# Desktop websites and isolation
+
+The desktop app opens your hosted Rex website. It no longer embeds the chat frontend with a hardcoded localhost API. Start it, enter a website address, then use the website's sign-in or account creation screen. Existing sessions remain in the system webview's cookie store. Registration follows the server's setting; the app cannot bypass closed registration.
+
+Only HTTPS websites are accepted, with certificate validation. HTTP is accepted for loopback development addresses. The launcher checks `/auth/state`, rejects redirects and oversized responses, and saves only the origin in its application config directory. Passwords and session tokens are not saved by the launcher or in JavaScript local storage. The website keeps its HttpOnly session cookie; authentication responses no longer return its bearer token.
+
+The bundled launcher and remote workspace are separate webviews. Only the launcher has permission to run the two connection commands. The workspace has no native shell, filesystem, process or opener permissions. Rust also checks the calling webview and launcher origin. External links open in the normal browser. Use **Rex → Change website** (`Ctrl/Cmd+Shift+W`) to select another server, or **Rex → Reload workspace** to reload. Closing the workspace returns to the launcher.
+
+This follows Tauri's [capability boundaries](https://v2.tauri.app/security/capabilities/), including explicit permissions for application commands. These boundaries limit native APIs; they do not establish that a user-selected website is trustworthy.
+
+## Run or build
+
+```sh
+pnpm install --frozen-lockfile
+pnpm dev:desktop
+pnpm --filter desktop tauri build --bundles deb,rpm
+```
+
+Rust and Tauri's platform prerequisites are required. The installed desktop app needs no local API or QEMU. Computers run on the website's API host, inside their assigned VMs.
+
+## Host a website
+
+```sh
+pnpm build
+REX_WEB_ORIGIN=https://rex.example.com pnpm --filter api start
+```
+
+The API serves `apps/web/dist`, including direct links to bots, groups and the admin pages. Production web builds use their own origin for the API by default. `REX_WEB_DIST` can select another absolute build directory. API requests to admin endpoints remain JSON; browser page requests receive the SPA. The API binds to loopback by default.
+
+Put it behind an HTTPS reverse proxy. Example Caddy configuration, replacing the example domain:
+
+```caddy
+rex.example.com {
+    reverse_proxy 127.0.0.1:8787
+}
+```
+
+Keep the database, generated encryption key and VM disks in the server's persistent data directory, outside the web build directory. Forward WebSockets through the reverse proxy for the computer screen. Do not expose guest SSH or noVNC ports publicly.
+
+## Computer boundaries
+
+Bot shell commands run through `rex-sessiond` inside the account's VM. No host filesystem mount, container socket or native desktop command API is exposed to bots. QEMU's `restrict=on` blocks direct guest traffic to the host and private network. Internet access goes through a loopback proxy exposed at `http://10.0.2.100:3128` inside the guest. The proxy allows public HTTP on port 80 and HTTPS on port 443, validates and pins DNS answers, and refuses private, loopback, metadata and known host addresses. Set `REX_WEB_ORIGIN` so its resolved public host address is refused too. Raw outbound TCP/UDP and IPv6 are unavailable. SSH connections initiated by the API still work.
+
+The QEMU relay is a fixed netcat connection to that proxy; guest input cannot select a host command or relay destination. Install the host prerequisite with `scripts/qemu/setup-host.sh`. Keep `REX_VM_PROXY_PORT` stable across API restarts. Existing unrestricted VMs restart on their next use to apply the boundary; their disks are retained. Existing shells should keep the injected proxy environment and use `sudo -E` for network-dependent package commands. New guests also have apt proxy configuration. See QEMU's [user-network options](https://www.qemu.org/docs/master/system/qemu-manpage.html).
+
+Computer previews open when clicked. Take control opens the interactive screen, unlocks guest input and prevents new bot computer actions until control is returned. A command already running in the guest can finish. Control leases expire if the client stops renewing them. The screen runs in a sandboxed iframe without same-origin privileges, so scripts served by the guest cannot read the parent page or make authenticated API requests. A valid short-lived view token is required for screen files and WebSockets.
+
+HTTP fetch tools also enforce the public-address boundary, even if the legacy `REX_ALLOW_PRIVATE_FETCH` provider override is set. Admin-connected local model providers are a separate, explicit server configuration.
+
+## Autonomous routines
+
+Bots may create a relevant routine when an ongoing user task warrants follow-up. They must first list existing routines, use the least frequent useful schedule and tell the user what was scheduled. The tool also reuses identical tasks instead of creating duplicates. Routines remain scoped to their owner and chat; scheduled runs cannot create more routines. Models still determine whether to use the tool, so prompt instructions are guidance rather than a guarantee of model behavior.
+
+Scheduled work uses a model connected under Settings → Models. Browser-only fallback keys are unavailable when the browser is closed. The API must remain running for routines to execute.

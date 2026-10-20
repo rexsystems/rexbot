@@ -11,13 +11,15 @@ import { DEFAULT_BOT, DEFAULT_SETTINGS, buildSystemPrompt, type Conversation, ty
 test("groups preserve speakers, permit real private replies only among peers, and enforce turn limits", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "rex-groups-test-"));
   process.env.REX_DATA_DIR = directory;
-  // The fixture site runs on loopback, which bots may only reach when the operator allows it.
-  process.env.REX_ALLOW_PRIVATE_FETCH = "1";
   const { db } = await import("../src/db.js");
   const { createConversation, getConversation, listMessages, deleteConversation } = await import("../src/conversations.js");
   const { groupRoutes } = await import("../src/routes/groups.js");
   const { chatRoutes } = await import("../src/routes/chat.js");
   const { botRoutes } = await import("../src/routes/bots.js");
+  const { uploadRoutes } = await import("../src/routes/uploads.js");
+  const fixture = new FormData();
+  fixture.append("file", new Blob(["Verified fixture value: 42"], { type: "text/plain" }), "fact.txt");
+  const upload = await (await asUser(uploadRoutes).request("/uploads", { method: "POST", body: fixture })).json() as { id: string };
   const { activeChats, listExchanges, selectGroupResponders } = await import("../src/groups.js");
   const { messageBot } = await import("../src/botMessaging.js");
   const alpha = createConversation("Alpha", { ...DEFAULT_BOT, name: "Alpha" }, TEST_USER.id);
@@ -28,7 +30,6 @@ test("groups preserve speakers, permit real private replies only among peers, an
   let fetchedFact = false;
   let modelUrl = "";
   const model = createServer(async (request, response) => {
-    if (request.url === "/fact") { fetchedFact = true; response.end("Verified fixture value: 42"); return; }
     let raw = "";
     for await (const chunk of request) raw += chunk;
     const body = JSON.parse(raw);
@@ -37,9 +38,10 @@ test("groups preserve speakers, permit real private replies only among peers, an
     const system = body.messages[0].content as string;
     const hasTool = body.messages.some((message: { role: string }) => message.role === "tool");
     const privateRequest = system.includes("answering a private request");
+    if (privateRequest && body.messages.some((message: { role: string; content?: string }) => message.role === "tool" && message.content?.includes("Verified fixture value: 42"))) fetchedFact = true;
     const alphaTurn = system.includes('Your display name is "Alpha"');
     const tool = (name: string, args: unknown) => ({ tool_calls: [{ index: 0, id: "call_fixture", type: "function", function: { name, arguments: JSON.stringify(args) } }] });
-    const delta = privateRequest ? hasTool ? { content: "I fetched and verified the fixture: 42." } : tool("http_fetch", { url: `${modelUrl}/fact` }) : alphaTurn && !hasTool ? tool("message_bot", { bot_id: beta.id, message: "Check the fixture for me." }) : { content: alphaTurn ? "Beta checked the fixture: 42." : "I reviewed Alpha's result: 42." };
+    const delta = privateRequest ? hasTool ? { content: "I fetched and verified the fixture: 42." } : tool("read_upload", { upload_id: upload.id }) : alphaTurn && !hasTool ? tool("message_bot", { bot_id: beta.id, message: "Check the fixture for me." }) : { content: alphaTurn ? "Beta checked the fixture: 42." : "I reviewed Alpha's result: 42." };
     response.setHeader("Content-Type", "text/event-stream");
     response.end(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`);
   });

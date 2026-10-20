@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for Rex desktop",
+  "description": "Only the bundled connection screen can select a website. Remote workspace windows have no native permissions.",
   "windows": ["main"],
-  "permissions": ["core:default", "shell:allow-open"]
+  "permissions": ["allow-connect-website", "allow-saved-website"]
 }

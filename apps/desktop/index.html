@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Connect to Rex</title></head>
+  <body>
+    <main class="connection">
+      <p class="brand">Rex</p>
+      <h1>Your workspace, on desktop.</h1>
+      <p class="intro">Enter your Rex website. Sign in there, or create an account if registration is open.</p>
+      <form id="connect-form">
+        <label for="website">Website address</label>
+        <input id="website" name="website" type="url" placeholder="https://rex.example.com" autocomplete="url" spellcheck="false" required aria-describedby="website-help" />
+        <p id="website-help" class="hint">Use HTTPS. Local development also accepts HTTP on localhost.</p>
+        <p id="connection-error" role="alert" hidden></p>
+        <button id="connect" type="submit">Connect to website</button>
+        <p id="connection-status" role="status" aria-live="polite"></p>
+      </form>
+      <p class="privacy">Your password is entered on your website. This connection screen remembers only its address.</p>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

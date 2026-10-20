@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSession } from "./session";
-import { ActionIcon, Alert, Button, Group, Loader, Modal, ScrollArea, Stack, Text } from "@mantine/core";
-import type { ComputerSession, ComputerStatus } from "@rex/shared";
+import { ActionIcon, Alert, Button, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
+import type { ComputerResult, ComputerSession, ComputerStatus } from "@rex/shared";
 import * as api from "./api";
 import { IconCollapse, IconComputer } from "./icons";
 
@@ -57,10 +57,39 @@ export function ComputerPanel({
       <ScrollArea className="computer-panel-scroll" offsetScrollbars>
         {status?.desktop && status.available
           ? <DesktopScreen status={status} error={error} active={active} bots={bots} focusBotId={focusBotId} />
+          : status?.backend === "podman" && status.available ? <SandboxBody status={status} refresh={refresh} />
           : <SetupBody status={status} error={error} refresh={refresh} />}
       </ScrollArea>
     </section>
   );
+}
+
+function SandboxBody({ status, refresh }: { status: ComputerStatus; refresh: () => Promise<void> }) {
+  const [command, setCommand] = useState("");
+  const [result, setResult] = useState<ComputerResult | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function act(action: "start" | "stop" | "run") {
+    setPending(true);
+    setError(null);
+    try {
+      if (action === "run") setResult(await api.execComputer(command));
+      else if (action === "start") await api.startComputer();
+      else { await api.stopComputer(); setResult(null); }
+      await refresh();
+    } catch (err) { setError(errorText(err)); }
+    finally { setPending(false); }
+  }
+  return <Stack gap="md">
+    <Group justify="space-between"><Text fw={600}>{status.running ? "Running" : "Stopped"}</Text><Button variant="subtle" onClick={() => void refresh()} disabled={pending}>Refresh computer status</Button></Group>
+    <Text size="sm" c="dimmed">Python and shell in an isolated, temporary workspace. No network or desktop. Stopping it erases its files.</Text>
+    {error ? <Alert color="red" role="alert">{error}</Alert> : null}
+    <Button loading={pending} variant="default" onClick={() => void act(status.running ? "stop" : "start")}>{status.running ? "Stop & erase workspace" : "Start computer"}</Button>
+    <form onSubmit={(event) => { event.preventDefault(); void act("run"); }}>
+      <Stack gap="sm"><Textarea label="Run inside Rex Computer" value={command} onChange={(event) => setCommand(event.currentTarget.value)} autosize minRows={3} maxRows={8} /><Button type="submit" loading={pending} disabled={!status.running || !command.trim()}>Run command</Button></Stack>
+    </form>
+    {result ? <div className="computer-output"><Text size="sm">Exit {result.exitCode}</Text><pre>{result.output}</pre></div> : null}
+  </Stack>;
 }
 
 function SetupBody({ status, error, refresh }: { status: ComputerStatus | null; error: string | null; refresh: () => Promise<void> }) {
@@ -174,6 +203,7 @@ function DesktopScreen({
       if (controlling) await api.releaseComputerControl(botId);
       else await api.takeComputerControl(botId);
       setControlling(!controlling);
+      if (!controlling) setExpanded(true);
     } catch (err) { setSessionError(errorText(err)); }
     finally { setChangingControl(false); }
   }
@@ -203,7 +233,10 @@ function DesktopScreen({
   }
 
   const viewUrl = session ? new URL(api.computerViewUrl(session.viewPath), window.location.href) : null;
-  viewUrl?.searchParams.set("view_only", controlling ? "0" : "1");
+  if (controlling) viewUrl?.searchParams.delete("view_only");
+  else viewUrl?.searchParams.set("view_only", "true");
+  const previewUrl = viewUrl ? new URL(viewUrl) : null;
+  previewUrl?.searchParams.set("view_only", "true");
 
   return (
     <Stack gap="md">
@@ -225,22 +258,27 @@ function DesktopScreen({
       ) : (
         <>
           {sessionError ? <Alert color="orange" title="Computer control">{sessionError}</Alert> : null}
-          <Button variant="subtle" onClick={() => setExpanded(true)}>Enlarge screen</Button>
-          <div
-            className={`computer-screen${controlling ? " computer-screen-controlled" : ""}`}
+          <button
+            type="button"
+            className="computer-screen computer-screen-hit"
             style={{ aspectRatio: `${session.width} / ${session.height}` }}
+            onClick={() => setExpanded(true)}
+            aria-label={`Open ${bot?.name ?? "bot"}'s computer`}
           >
             {!expanded ?
             <iframe
               key={`${session.viewPath}-${controlling}`}
               title={`${bot?.name ?? "Bot"}'s screen`}
-              src={viewUrl!.href}
-              tabIndex={controlling ? 0 : -1}
+              src={previewUrl!.href}
+              tabIndex={-1}
+              sandbox="allow-scripts"
+              inert
             /> : null}
-          </div>
+            <span className="computer-screen-hint">Click to open computer</span>
+          </button>
           <Modal
             opened={expanded}
-            onClose={() => setExpanded(false)}
+            onClose={() => { setExpanded(false); setControlling(false); }}
             title={<Group><Text>{bot?.name ?? "Screen"}</Text><Button variant="default" loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button></Group>}
             size="95vw"
             centered
@@ -248,12 +286,14 @@ function DesktopScreen({
             classNames={{ body: "computer-expand-body", content: "computer-expand-content" }}
           >
             <div className={`computer-screen computer-screen-expanded${controlling ? " computer-screen-controlled" : ""}`} style={{ aspectRatio: `${session.width} / ${session.height}` }}>
-              <iframe
+              {expanded ? <iframe
                 key={`${session.viewPath}-full-${controlling}`}
                 title={`${bot?.name ?? "Bot"}'s screen (enlarged)`}
                 src={viewUrl!.href}
                 tabIndex={controlling ? 0 : -1}
-              />
+                sandbox="allow-scripts"
+                inert={!controlling}
+              /> : null}
             </div>
           </Modal>
         </>

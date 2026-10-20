@@ -78,8 +78,12 @@ test("sidebar, isolated computer, streamed reactions and persistence", async ({ 
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await page.getByRole("button", { name: "Key saved in this browser (older setup)" }).click();
   await page.getByRole("textbox", { name: "LLM base URL" }).fill(modelUrl);
   await page.getByLabel("LLM API key", { exact: true }).fill("test-only-key");
+  await page.getByRole("tab", { name: "Agent", exact: true }).click();
+  await page.getByRole("switch", { name: "Show agent activity in chat" }).focus();
+  await page.keyboard.press("Space");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.locator('input[type="file"]').setInputFiles({ name: "sample.txt", mimeType: "text/plain", buffer: Buffer.from("Disposable test attachment") });
   await expect(page.getByText("sample.txt", { exact: true })).toBeVisible();
@@ -103,9 +107,10 @@ test("sidebar, isolated computer, streamed reactions and persistence", async ({ 
   await expect(page.getByRole("button", { name: "Remove your ❤️ reaction" })).toHaveCount(0);
   await page.locator(".tool-detail > summary").click();
   await expect(page.locator(".tool-detail pre").last()).toContainText("42");
-  await page.getByRole("button", { name: "Memory", exact: false }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Memory", exact: true }).click();
   await expect(page.getByText("Uses a disposable workspace in this test.")).toBeVisible();
-  await page.getByRole("button", { name: "Delete memory" }).click();
+  await page.getByRole("button", { name: /^Delete memory:/ }).click();
   await expect(page.getByText("Nothing stored yet.")).toBeVisible();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Toggle computer drawer", exact: true }).click();
@@ -133,6 +138,7 @@ test("mobile menu, composer and computer panel fit a narrow screen", async ({ pa
   await expect(page.getByRole("textbox", { name: "Message Rex" })).toBeVisible();
   await page.getByRole("button", { name: "Menu", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Key saved in this browser (older setup)" }).click();
   await expect(page.getByRole("textbox", { name: "Model", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Toggle computer drawer", exact: true }).click();
@@ -519,7 +525,7 @@ test("attachment errors retry, oversized files remove and plain-text paste still
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Remove huge.png" }).click();
   await page.evaluate(() => navigator.clipboard.writeText("pasted words"));
-  await page.getByRole("textbox", { name: "Message Rex" }).focus();
+  await page.getByRole("textbox", { name: /^Message / }).focus();
   await page.keyboard.press("Control+V");
-  await expect(page.getByRole("textbox", { name: "Message Rex" })).toHaveValue("pasted words");
+  await expect(page.getByRole("textbox", { name: /^Message / })).toHaveValue("pasted words");
 });

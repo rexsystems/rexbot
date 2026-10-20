@@ -233,8 +233,7 @@ export class DesktopComputer {
   }
 
   private toSession(session: GuestSession, token: string): ComputerSession {
-    const query = new URLSearchParams({ autoconnect: "1", reconnect: "1", scale: "true", path: `computer/vnc/${token}/websockify`, view_only: "1" });
-    return { botId: session.botId, slot: session.slot, display: session.display, width: session.width, height: session.height, locked: session.locked, viewPath: `/computer/vnc/${token}/vnc_lite.html?${query}` };
+    return { botId: session.botId, slot: session.slot, display: session.display, width: session.width, height: session.height, locked: session.locked, viewPath: `/computer/vnc/${token}/view.html?view_only=true` };
   }
 
   private async ensureGuestSession(botId: string): Promise<GuestSession> {
@@ -288,7 +287,6 @@ export class DesktopComputer {
 
   async takeControl(botId: string): Promise<ComputerSessionState> {
     assertBotId(botId);
-    if (this.busyBots.has(botId)) throw new Error("Wait for the bot's current computer action to finish, then take control.");
     this.ownerControl.set(botId, Date.now() + 60_000);
     try {
       await this.ensureGuestSession(botId);
@@ -330,7 +328,12 @@ export class DesktopComputer {
     const action = validateInput(raw);
     return this.withBot(botId, async () => {
       await this.ensureGuestSession(botId);
+      if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has taken control of this computer.");
       await this.lock(botId);
+      if ((this.ownerControl.get(botId) ?? 0) > Date.now()) {
+        await this.unlock(botId);
+        throw new Error("The user has taken control of this computer.");
+      }
       const result = await this.guest(["input", botId], JSON.stringify(action));
       if (result.code !== 0) throw new Error(result.output || "Input failed.");
       return result.output || `${action.action} done`;
