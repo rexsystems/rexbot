@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { ChatCompletionChunk } from "./llm.js";
 
-const marker = /<[｜|]\s*DSML\s*[｜|]\s*/;
-const tag = String.raw`<[｜|]\s*DSML\s*[｜|]\s*`;
-const closeTag = String.raw`(?:</[｜|]\s*DSML\s*[｜|]\s*|<[｜|]\s*DSML\s*[｜|]\s*/)`;
+const marker = /<\s*(?:[｜|]\s*)+DSML\s*(?:[｜|]\s*)+/;
+const tag = String.raw`<\s*(?:[｜|]\s*)+DSML\s*(?:[｜|]\s*)+`;
+const closeTag = String.raw`(?:<\s*/\s*(?:[｜|]\s*)+DSML\s*(?:[｜|]\s*)+|${tag}/\s*)`;
 
 export function parseDsml(text: string, allowed: Set<string>) {
   const calls: Array<{ index: number; id: string; type: string; function: { name: string; arguments: string } }> = [];
@@ -50,7 +50,7 @@ export async function* normalizeToolMarkup(source: AsyncIterable<ChatCompletionC
     if (!markup) {
       // Hold a possible split marker until the next chunk arrives.
       const partial = pending.lastIndexOf("<");
-      const cut = partial >= 0 && /^<(?:[｜|](?:\s*D(?:S(?:M(?:L(?:\s*[｜|])?)?)?)?)?)?$/.test(pending.slice(partial)) ? partial : pending.length;
+      const cut = partial >= 0 && /^<(?:[｜|]+(?:D(?:S(?:M(?:L[｜|]*)?)?)?)?)?$/.test(pending.slice(partial).replace(/\s/g, "")) ? partial : pending.length;
       if (cut) yield { ...chunk, choices: [{ ...chunk.choices?.[0], delta: { content: pending.slice(0, cut) } }] };
       pending = pending.slice(cut);
     }

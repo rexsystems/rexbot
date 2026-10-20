@@ -170,6 +170,11 @@ when its URL stays unchanged. Preview and expanded screen support retry, with er
 Only messages from the current screen iframe can change its connection state. Reconnection regression coverage
 uses the actual viewer HTML and exercises expiry, disconnect, keyboard retry, a failed retry and frame-message spoofing.
 
+The remaining DeepSeek leak was traced to actual saved output using double fullwidth bars (`<｜｜DSML｜｜ calls>`).
+The parser and historical-reply sanitizer now handle repeated/spaced ASCII and fullwidth bars. Regression checks
+exercise all forms across character-level stream splits and preserve the command text exactly. Old stored calls
+are hidden by rendering sanitization; they are never executed retroactively. Guest image sharing is the next follow-up.
+
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
 - **Claude (Anthropic)**: third-party apps must use API keys from Claude Console. Anthropic's Claude Code legal

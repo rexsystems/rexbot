@@ -83,6 +83,7 @@ test("thinking tools replay streamed reasoning in public/private rounds and late
 });
 
 test("speaker labels are removed only at the start of the current bot's reply", () => {
+  assert.equal(botReplyText('<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="computer_exec">secret command</｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>', "Bix"), "The model returned an unprocessed tool call. Send the request again to retry.");
   assert.equal(botReplyText("[Bix]: Salut!", "Bix"), "Salut!");
   assert.equal(botReplyText(" [Bix] : Salut!", "Bix"), "Salut!");
   assert.equal(botReplyText("[Bi", "Bix", false), "");

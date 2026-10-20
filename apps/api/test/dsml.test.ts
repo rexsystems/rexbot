@@ -7,6 +7,23 @@ const command = "cd ~/siteparts && cat > 05_services.html <<'EOF'\n<section>Serv
 const markup = `<｜DSML｜calls><｜DSML｜invoke name="computer_exec"><｜DSML｜parameter name="command" string="true">${command}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜calls>`;
 const tools = [{ function: { name: "computer_exec" } }];
 
+test("real DeepSeek double-bar DSML and spaced variants execute across stream splits", async () => {
+  for (const delimiter of ["｜｜", "||", "｜ ｜", " | | "]) {
+    const actual = markup.replaceAll("｜DSML｜", `${delimiter}DSML${delimiter} `);
+    for (const size of [1, 2, 7, 80, 1000]) {
+      async function* source(): AsyncGenerator<ChatCompletionChunk> {
+        for (let at = 0; at < actual.length; at += size) yield { choices: [{ delta: { content: actual.slice(at, at + size) } }] };
+      }
+      const chunks = [];
+      for await (const chunk of normalizeToolMarkup(source(), tools)) chunks.push(chunk);
+      assert.equal(chunks.map((chunk) => chunk.choices?.[0]?.delta?.content ?? "").join(""), "");
+      const calls = chunks.flatMap((chunk) => chunk.choices?.[0]?.delta?.tool_calls ?? []);
+      assert.equal(calls.length, 1);
+      assert.deepEqual(JSON.parse(calls[0]!.function!.arguments!), { command });
+    }
+  }
+});
+
 test("DSML tool markup survives arbitrary stream splits without leaking into chat", async () => {
   for (const size of [1, 2, 7, 80, 1000]) {
     async function* source(): AsyncGenerator<ChatCompletionChunk> {
