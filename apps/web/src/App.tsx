@@ -68,6 +68,7 @@ import { VoiceModal } from "./VoiceModal";
 import { DeleteDialog } from "./DeleteDialog";
 import { MentionInput } from "./MentionInput";
 import { ChatQuestionCard } from "./ChatQuestionCard";
+import { SidebarConversation } from "./SidebarConversation";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 import { startActivityPulse, stopActivityPulse } from "./uiSounds";
@@ -148,6 +149,8 @@ export function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [listsLoaded, setListsLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | undefined>();
+  const activeIdRef = useRef<string | undefined>(undefined);
+  activeIdRef.current = activeId;
   const [sendingMessage, setSendingMessage] = useState(false);
   const sendingMessageRef = useRef(false);
   const [thread, setThread] = useState<ThreadItem[]>([]);
@@ -414,6 +417,7 @@ export function App() {
     if (busy && activeId) {
       sendingMessageRef.current = true;
       setSendingMessage(true);
+      const queueForId = activeId;
       const sentAttachments = attachments.items;
       const uploadIds = sentAttachments.flatMap((item) => item.upload ? [item.upload.id] : []);
       setDraft("");
@@ -423,33 +427,39 @@ export function App() {
       let newReply = false;
       let replySpeaker = { botId: activeConversation?.bot ? activeId : undefined, botName: activeConversation?.bot?.name };
       const replyId = uid();
+      const viewingQueue = () => activeIdRef.current === queueForId;
       try {
-        await api.streamChat({ conversationId: activeId, message: text, uploadIds, settings, onEvent: (event) => {
+        await api.streamChat({ conversationId: queueForId, message: text, uploadIds, settings, onEvent: (event) => {
           if (event.type === "user_message") {
             accepted = true;
+            if (!viewingQueue()) return;
             setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === event.message.id) ? previous : [...previous, { kind: "message", message: event.message }]);
           }
-          if (event.type === "error") setError(event.message);
-          if (event.type === "assistant_message") setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === event.message.id) ? previous : [...previous, { kind: "message", message: event.message }]);
+          if (event.type === "error" && viewingQueue()) setError(event.message);
+          if (event.type === "assistant_message") {
+            if (!viewingQueue()) return;
+            setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === event.message.id) ? previous : [...previous, { kind: "message", message: event.message }]);
+          }
           if (event.type === "speaker") replySpeaker = { botId: event.botId, botName: event.botName };
           if (event.type === "delta") {
             newReply = true;
+            if (!viewingQueue()) return;
             setBusy(true);
             const speaker = replySpeaker;
             setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === replyId)
               ? previous.map((item) => item.kind === "message" && item.message.id === replyId ? { ...item, message: { ...item.message, content: item.message.content + event.text } } : item)
-              : [...previous, { kind: "message", message: { id: replyId, conversationId: activeId, role: "assistant", content: event.text, createdAt: new Date().toISOString(), ...speaker } }]);
+              : [...previous, { kind: "message", message: { id: replyId, conversationId: queueForId, role: "assistant", content: event.text, createdAt: new Date().toISOString(), ...speaker } }]);
           }
         } });
-        if (newReply) {
-          const data = await api.getConversation(activeId);
+        if (newReply && viewingQueue()) {
+          const data = await api.getConversation(queueForId);
           setThread(toThread(data.messages));
           setBusy(Boolean(data.busy));
           setFollowTurn(Boolean(data.busy));
         }
       } catch (error) {
-        if (!accepted) { setDraft((current) => current ? `${text}\n\n${current}` : text); attachments.restore(sentAttachments); }
-        setError(error instanceof Error ? error.message : String(error));
+        if (!accepted) { if (viewingQueue()) setDraft((current) => current ? `${text}\n\n${current}` : text); attachments.restore(sentAttachments); }
+        if (viewingQueue()) setError(error instanceof Error ? error.message : String(error));
       } finally {
         sendingMessageRef.current = false;
         setSendingMessage(false);
@@ -476,6 +486,11 @@ export function App() {
     const assistantId = uid();
     let streamingAssistantId = assistantId;
     let conversationId = activeId;
+    const streamForId = activeId;
+    const viewingStream = () => {
+      const current = activeIdRef.current;
+      return Boolean(current && (current === conversationId || current === streamForId));
+    };
     let speaker: { botId?: string; botName?: string } = {};
     let speakerStarted = false;
     setThread((prev) => [
@@ -508,6 +523,7 @@ export function App() {
         onEvent: (ev) => {
           if (ev.type === "speaker") {
             speaker = { botId: ev.botId, botName: ev.botName };
+            if (!viewingStream()) { speakerStarted = true; return; }
             const currentSpeaker = speaker;
             if (!speakerStarted) {
               const currentId = streamingAssistantId;
@@ -523,6 +539,7 @@ export function App() {
             accepted = true;
             sendingMessageRef.current = false;
             setSendingMessage(false);
+            if (!viewingStream()) return;
             setThread((prev) => {
               if (prev.some((item) => item.kind === "message" && item.message.id === ev.message.id)) return prev;
               if (prev.some((item) => item.kind === "message" && item.message.id === userMsg.id)) return prev.map((item) => item.kind === "message" && item.message.id === userMsg.id ? { kind: "message", message: ev.message } : item);
@@ -530,9 +547,11 @@ export function App() {
             });
           }
           if (ev.type === "reaction") {
+            if (!viewingStream()) return;
             setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === ev.messageId ? { ...item, message: { ...item.message, reactions: ev.reactions } } : item));
           }
           if (ev.type === "assistant_message") {
+            if (!viewingStream()) return;
             const currentId = streamingAssistantId;
             setThread((previous) => {
               if (previous.some((item) => item.kind === "message" && item.message.id === ev.message.id)) return previous;
@@ -542,13 +561,16 @@ export function App() {
             });
           }
           if (ev.type === "message_done") {
+            if (!viewingStream()) return;
             const currentId = streamingAssistantId;
             setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === currentId ? { ...item, message: { ...item.message, id: ev.messageId } } : item));
           }
           if (ev.type === "conversation") {
             conversationId = ev.conversation.id;
-            setActiveId(ev.conversation.id);
-            syncUrl(conversationPath(ev.conversation), activeId ? "replace" : "push");
+            if (viewingStream()) {
+              setActiveId(ev.conversation.id);
+              syncUrl(conversationPath(ev.conversation), streamForId ? "replace" : "push");
+            }
             setConversations((prev) => {
               const exists = prev.some((c) => c.id === ev.conversation.id);
               if (exists) {
@@ -560,6 +582,7 @@ export function App() {
             });
           }
           if (ev.type === "delta") {
+            if (!viewingStream()) return;
             const currentId = streamingAssistantId;
             setThread((prev) =>
               prev.map((item) => {
@@ -577,6 +600,7 @@ export function App() {
             );
           }
           if (ev.type === "tool_start") {
+            if (!viewingStream()) return;
             if (ev.tool === "computer_input" || ev.tool === "computer_screenshot" || ev.tool === "computer_project") {
               setComputerFocus(speaker.botId);
               if (desktopComputer) setShowComputer(true);
@@ -607,7 +631,7 @@ export function App() {
                 message: {
                   id: nextId,
                   ...toolSpeaker,
-                  conversationId: activeId ?? "pending",
+                  conversationId: conversationId ?? streamForId ?? "pending",
                   role: "assistant",
                   content: "",
                   createdAt: new Date().toISOString(),
@@ -616,6 +640,7 @@ export function App() {
             ]);
           }
           if (ev.type === "tool_end") {
+            if (!viewingStream()) return;
             setThread((prev) =>
               prev.map((item) => {
                 if (
@@ -638,19 +663,19 @@ export function App() {
             );
           }
           if (ev.type === "error") {
-            setError(ev.message);
+            if (viewingStream()) setError(ev.message);
           }
         },
       });
-      if (conversationId) setThread(toThread((await api.getConversation(conversationId)).messages));
+      if (conversationId && viewingStream()) setThread(toThread((await api.getConversation(conversationId)).messages));
       await refreshLists();
     } catch (e) {
       if (!accepted) {
         attachments.restore(sentAttachments);
-        setDraft((current) => current ? `${text}\n\n${current}` : text);
-        setThread((previous) => previous.filter((item) => item.kind !== "message" || (item.message.id !== userMsg.id && item.message.id !== assistantId)));
-        setError(e instanceof Error ? e.message : String(e));
-      } else {
+        if (viewingStream()) setDraft((current) => current ? `${text}\n\n${current}` : text);
+        if (viewingStream()) setThread((previous) => previous.filter((item) => item.kind !== "message" || (item.message.id !== userMsg.id && item.message.id !== assistantId)));
+        if (viewingStream()) setError(e instanceof Error ? e.message : String(e));
+      } else if (viewingStream()) {
         // Browser dropped the stream; the server turn keeps going — follow via polling.
         handoff = true;
         setFollowTurn(true);
@@ -661,7 +686,7 @@ export function App() {
     } finally {
       sendingMessageRef.current = false;
       setSendingMessage(false);
-      if (!handoff) setBusy(false);
+      if (!handoff && viewingStream()) setBusy(false);
     }
   };
 
@@ -692,35 +717,21 @@ export function App() {
           </Group>
           <ScrollArea style={{ flex: 1 }} offsetScrollbars type="hover">
             <Stack gap={2}>
-              <Group justify="space-between" wrap="nowrap" mb="xs"><Text size="xs" c="dimmed" fw={600}>Your bots</Text><Tooltip label="New bot"><ActionIcon aria-label="New bot" size={36} variant="subtle" disabled={busy} onClick={() => { setBotEditor("new"); setMobileNav(false); }}><IconPlus size={20} /></ActionIcon></Tooltip></Group>
+              <Group justify="space-between" wrap="nowrap" mb="xs"><Text size="xs" c="dimmed" fw={600}>Your bots</Text><Tooltip label="New bot"><ActionIcon aria-label="New bot" size={36} variant="subtle" onClick={() => { setBotEditor("new"); setMobileNav(false); }}><IconPlus size={20} /></ActionIcon></Tooltip></Group>
               {conversations.length === 0 ? <Text size="sm" c="dimmed" px="xs">Create a bot to give it a name and a look of its own.</Text> : null}
               {conversations.filter((c) => c.kind !== "group").map((c) => (
-                <UnstyledButton
+                <SidebarConversation
                   key={c.id}
-                  className={`chat-nav${c.id === activeId ? " active" : ""}`}
-                  disabled={busy}
-                  onClick={() => void openConversation(c.id).catch((e) => setError(String(e)))}
-                >
-                  <Group gap="sm" wrap="nowrap">
-                    <BlobAvatar
-                      seed={c.id}
-                      appearance={c.bot}
-                      size={40}
-                      pulse={c.id === activeId && busy}
-                      float={c.id === activeId}
-                    />
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="chat-nav-title">{c.bot?.name ?? c.title}</div>
-                      <Text size="xs" c="dimmed" truncate>
-                        {c.bot ? "Your teammate" : "Conversation"}
-                      </Text>
-                    </div>
-                  </Group>
-                </UnstyledButton>
+                  conversation={c} active={c.id === activeId} busy={busy}
+                  onOpen={() => void openConversation(c.id).catch((e) => setError(String(e)))}
+                  onEdit={() => { setBotEditor(c); setMobileNav(false); }}
+                  onDelete={() => { setDeleteTarget(c); setMobileNav(false); }}
+                  onComputer={() => void openConversation(c.id).then(() => { setComputerFocus(c.id); setShowComputer(true); }).catch((e) => setError(String(e)))}
+                />
               ))}
-              <Group justify="space-between" wrap="nowrap" mt="md" mb="xs"><Text size="xs" c="dimmed" fw={600}>Groups</Text><Tooltip label="New group"><ActionIcon aria-label="New group" size={36} variant="subtle" disabled={busy} onClick={() => { setGroupEditor("new"); setMobileNav(false); }}><IconPlus size={20} /></ActionIcon></Tooltip></Group>
+              <Group justify="space-between" wrap="nowrap" mt="md" mb="xs"><Text size="xs" c="dimmed" fw={600}>Groups</Text><Tooltip label="New group"><ActionIcon aria-label="New group" size={36} variant="subtle" onClick={() => { setGroupEditor("new"); setMobileNav(false); }}><IconPlus size={20} /></ActionIcon></Tooltip></Group>
               {!conversations.some((c) => c.kind === "group") ? <Text size="sm" c="dimmed" px="xs">Bring bots together in a group.</Text> : null}
-              {conversations.filter((c) => c.kind === "group").map((c) => <UnstyledButton key={c.id} className={`chat-nav${c.id === activeId ? " active" : ""}`} disabled={busy} onClick={() => void openConversation(c.id).catch((e) => setError(String(e)))}><Group gap="sm" wrap="nowrap"><IconGroup size={32} /><div style={{ minWidth: 0, flex: 1 }}><div className="chat-nav-title">{c.title}</div><Text size="xs" c="dimmed">{c.memberIds?.length ?? 0} members</Text></div></Group></UnstyledButton>)}
+              {conversations.filter((c) => c.kind === "group").map((c) => <SidebarConversation key={c.id} conversation={c} active={c.id === activeId} busy={busy} onOpen={() => void openConversation(c.id).catch((e) => setError(String(e)))} onEdit={() => { setGroupEditor(c); setMobileNav(false); }} onDelete={() => { setDeleteTarget(c); setMobileNav(false); }} />)}
             </Stack>
           </ScrollArea>
           <Stack gap={6} className="sidebar-footer">
@@ -768,7 +779,7 @@ export function App() {
               </Group>
               <Group gap={4} wrap="nowrap">
                 <Tooltip label="Rex Computer"><ActionIcon aria-label="Toggle computer drawer" aria-expanded={showComputer} variant={showComputer ? "light" : "subtle"} size={44} onClick={() => setShowComputer(!showComputer)}><IconComputer size={26} /></ActionIcon></Tooltip>
-                {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
+                {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
               {activeId ? (
                 <Tooltip label="Delete conversation">
                   <ActionIcon

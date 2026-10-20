@@ -40,7 +40,19 @@ The live guest test also writes and reads a project through `computer_files`, re
 - Liveliness PASS: ENERGY 1 / RHYTHM 1 / MOTION 1 remains the workspace direction. The current question and Send answers are the dialog's focus. Existing type, spacing and orange selection/action accents keep it consistent with the chat. The mobile question screenshot was visually inspected.
 - Craftsmanship PASS: build, typecheck, all 45 API tests and question/computer browser checks pass. The broader browser run passed 17 checks; the remaining computer check had an ambiguous locator across the nested drawer/screen dialogs, which was scoped to the screen and passed on rerun. Vision fixtures verify exact screenshot bytes in OpenAI image parts after tool results, Anthropic base64 blocks, owner-only restored attachments, and a four-image request cap. Real provider credentials were not used; model adherence to reference-research instructions and interpretation quality are not guaranteed by these fixture tests.
 
+## Sidebar context actions
+
+- Hard Gate PASS: browser checks exercise right-click, Shift+F10, Escape, normal chat navigation, editing an inactive bot, its computer, group settings, canceling deletion and deleting only the selected bot. Desktop dots hide until hover/focus, both rows and controls remain transparent, and a real touch browser context opens the visible actions control. The narrow menu has no horizontal overflow and Axe reports no tested A/AA violations.
+- Purpose Gate PASS: context actions reuse existing editors, the computer panel and deletion confirmation. Hover visibility reduces desktop clutter; focus and a persistent touch target keep the same actions accessible. An explicit first-menu-item focus replaces the library's focusable presentation placeholder, fixing its Axe violation.
+- Liveliness PASS: the established ENERGY 1 / RHYTHM 1 / MOTION 1 remains. Existing spacing, warm surfaces and the orange selected name provide orientation. The mobile menu screenshot was visually inspected.
+- Craftsmanship PASS: all 45 API tests, typecheck and build pass. Twelve existing navigation/layout/provider browser checks pass, followed by passing realtime navigation and two sidebar browser checks. Updated hover tests explicitly hover the row before clicking a control that is intentionally hidden. Switching chats during streaming leaves the result in its original conversation. The relevant preexisting App navigation guards are included; unrelated provider edits remain local.
+
 ## Limits
+
+Sidebar context actions retain the established ENERGY 1 / RHYTHM 1 / MOTION 1 direction. Transparent conversation
+rows follow the owner's explicit request; the selected name uses the existing orange accent for orientation.
+The actions control reserves space so revealing it does not shift names. Desktop hover/focus visibility reduces
+clutter, while touch keeps a visible 44 px target. The menu uses the existing Mantine type, spacing and surfaces.
 
 Admin token follow-up: Hard Gate PASS (hover and keyboard-focus tooltips tested); Purpose Gate PASS (compact
 million-plus counts keep tables readable while the tooltip preserves exact values); Liveliness PASS (existing

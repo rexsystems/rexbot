@@ -194,6 +194,14 @@ keyboard focus. Browser coverage checks the threshold, billion counts and exact 
 explicitly preserve unfinished work in the bot rules; realtime regression coverage verifies original context and
 continued tool execution after a status question. Typecheck and the focused checks pass.
 
+Sidebar bots and groups now expose context actions through right-click, Shift+F10 and a 44 px actions control.
+Actions open the chosen chat, edit that bot/group, open its computer, or invoke the existing deletion confirmation.
+Desktop action dots appear on hover/focus or while the menu is open; touch devices retain a visible control.
+Conversation rows and the dots have transparent backgrounds, with the selected name carrying the orange accent.
+The existing local App navigation guards are included with this change because sidebar navigation stays available
+during streaming; a browser regression verifies that a background reply never appears in the other chat. Local
+provider/Bedrock changes remain outside these commits.
+
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
 - **Claude (Anthropic)**: third-party apps must use API keys from Claude Console. Anthropic's Claude Code legal

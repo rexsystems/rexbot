@@ -448,6 +448,21 @@ body {
   background: #24221e;
 }
 
+.sidebar-conversation { position: relative; min-width: 0; }
+.sidebar-conversation > .chat-nav { padding-right: 48px; }
+.sidebar-conversation > .chat-nav,
+.sidebar-conversation > .chat-nav:hover,
+.sidebar-conversation > .chat-nav.active { background: transparent; }
+.sidebar-conversation > .chat-nav.active .chat-nav-title { color: var(--mantine-color-ember-4); }
+.sidebar-conversation-menu { position: absolute; right: 2px; top: 10px; font-size: 24px; }
+.sidebar-conversation-menu:hover { background: transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-conversation-menu { opacity: 0; pointer-events: none; }
+  .sidebar-conversation:hover .sidebar-conversation-menu,
+  .sidebar-conversation:focus-within .sidebar-conversation-menu,
+  .sidebar-conversation[data-menu-open] .sidebar-conversation-menu { opacity: 1; pointer-events: auto; }
+}
+
 .chat-nav-title {
   font-size: 0.92rem;
   font-weight: 500;
