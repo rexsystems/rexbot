@@ -73,5 +73,14 @@ computerRoutes.post("/computer/:action", async (c) => {
 });
 
 /** Image build state. Everyone may read it (the panel shows progress); only admins may start a build. */
-computerRoutes.get("/computer/template", (c) => c.json(computers.templateInfo()));
+computerRoutes.get("/computer/template", (c) => {
+  const info = computers.templateInfo();
+  if (c.get("user").role === "admin") return c.json(info);
+  // Members only need to know whether an image exists or is on its way; host details stay with admins.
+  return c.json({
+    host: { kvm: info.host.kvm, accel: info.host.accel, problems: [] },
+    template: info.template ? { version: info.template.version, builtAt: info.template.builtAt, sizeBytes: 0, baseImage: "" } : null,
+    build: { running: info.build.running, log: [], error: null, startedAt: info.build.startedAt, finishedAt: info.build.finishedAt },
+  });
+});
 computerRoutes.post("/computer/template/build", requireAdmin, (c) => c.json(computers.buildTemplate()));

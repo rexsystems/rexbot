@@ -6,7 +6,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export DEBIAN_FRONTEND=noninteractive
 
-apt-get update
+# Fail here, not at install, when the mirrors are unreachable.
+apt-get update -o APT::Update::Error-Mode=any
 apt-get install -y --no-install-recommends \
   openssh-server cloud-guest-utils python3 python3-pip python3-venv git curl ca-certificates \
   xvfb openbox tint2 x11vnc novnc websockify xdotool wmctrl scrot xclip x11-xserver-utils \

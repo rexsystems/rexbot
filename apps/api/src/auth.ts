@@ -98,6 +98,7 @@ export function createSession(userId: string, userAgent?: string): { token: stri
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_DAYS * 86_400_000);
   db.prepare("INSERT INTO sessions (id, user_id, created_at, expires_at, last_seen_at, user_agent) VALUES (?, ?, ?, ?, ?, ?)").run(hashToken(token), userId, now.toISOString(), expiresAt.toISOString(), now.toISOString(), userAgent?.slice(0, 200) ?? null);
+  db.prepare("UPDATE users SET last_seen_at = ? WHERE id = ?").run(now.toISOString(), userId);
   return { token, expiresAt };
 }
 

@@ -45,11 +45,15 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [ ] Invite-only sign-up mode (admin-created accounts work through the admin panel).
 
 ### Phase 3: Admin panel (`/admin`)
-- [ ] Overview: users, bots, messages, running VMs (real counts from the database).
-- [ ] Users: search, role, disable/enable, reset password, delete (with confirmation), sessions sign-out.
-- [ ] Computers: template status/build, every user's VM with start/stop/reset/delete, resources.
-- [ ] Usage: messages and tokens per user and provider.
-- [ ] Settings: sign-up mode, default limits, workspace provider keys users may share.
+- [x] Overview: users, bots, messages, running VMs (real counts from the database).
+- [x] Users: search, add user, role, disable/enable (signs out + stops their VM), set password, sign out
+      everywhere, delete with typed confirmation (removes chats, memory, uploads, VM disk). Can't demote,
+      disable or delete yourself; the last active admin is protected.
+- [x] Computers: image status/build with live log and custom base image, every user's VM with start/stop/
+      force off/reset, resources dialog, boot (serial) log.
+- [x] Usage: messages per day, per user; tokens per user and per model once providers report them (Phase 4).
+- [x] Settings: workspace name, sign-up mode, bots per user, VM defaults, running limit, idle shutdown.
+- [ ] Workspace provider keys users may share (needs Phase 4).
 
 ### Phase 4: Model providers
 - [ ] Provider abstraction in the API: OpenAI-compatible adapter (OpenAI, xAI, DeepSeek, OpenRouter, Groq,
@@ -80,11 +84,16 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - Phase 2: `auth.ts` + `routes/auth.ts` (API), `AuthScreen.tsx`, `AccountModal.tsx`, `session.tsx`, `Root.tsx` (web).
   Tests: `test/auth.test.ts` (first admin, closed sign-up, isolation, logout), `test/safeFetch.test.ts`.
   Playwright signs in once in `test/global-setup.ts`.
+- Phase 3: `routes/admin.ts` (all behind `requireAdmin`), `test/admin.test.ts`, web `src/admin/*`
+  (AdminPanel shell reuses the chat sidebar look; Overview, Users, Computers, Usage, WorkspaceSettings).
+  Members see only "an admin needs to build the image" in the computer panel; host details are admin-only.
 
 ## In progress
 
-- Phase 1 verification: building the template on the dev box. Nested KVM hangs on this box, so it uses
-  `REX_QEMU_ACCEL=tcg` (slow: the desktop package install takes a long time under emulation).
+- Phase 1 verification on the dev box (nested KVM hangs here, so `REX_QEMU_ACCEL=tcg`). Found and fixed:
+  guests tried IPv6 first on an IPv6-less host (now `ipv6=off` unless `REX_QEMU_IPV6=1`), and `apt-get update`
+  failures were silent (now fatal). Still open: apt over HTTPS times out through this box's egress proxy
+  (`198.18.0.1:443`); investigating whether that's the sandbox or something to handle in guest-setup.
 
 ## Known gaps
 
@@ -95,8 +104,9 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 
 ## Where I stopped
 
-Phase 2 (accounts) committed. Next: Phase 3 admin panel: `/admin/*` API routes behind `requireAdmin`, then the
-`/admin` page (overview, users, computers, usage, settings) in the existing style.
+Phase 3 (admin panel) committed. Next: Phase 4 providers: a provider registry in `packages/shared`, an
+adapter layer in the API (OpenAI-compatible + native Anthropic), per-user encrypted keys server-side, provider
+logos in `apps/web/public/providers`, and usage recording into `usage_events`.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

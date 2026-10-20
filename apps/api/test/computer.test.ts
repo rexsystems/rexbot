@@ -6,11 +6,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { RexComputer } from "../src/computer.js";
 
+// The test needs a working Podman and the sandbox image (podman pull docker.io/library/python:3.13-alpine).
 function hasPodman() {
-  try { execFileSync("podman", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
+  try { execFileSync("podman", ["image", "exists", "docker.io/library/python:3.13-alpine"], { stdio: "ignore", timeout: 20_000 }); return true; } catch { return false; }
 }
 
-test("rootless computer isolates files, resources and networking", { timeout: 45_000, skip: !hasPodman() && "Podman is not installed" }, async () => {
+test("rootless computer isolates files, resources and networking", { timeout: 45_000, skip: !hasPodman() && "Podman or its python:3.13-alpine image is not available" }, async () => {
   const name = `rex-computer-test-${process.pid}`;
   const computer = new RexComputer(name);
   const markerDirectory = mkdtempSync(path.join(tmpdir(), "rex-host-marker-"));

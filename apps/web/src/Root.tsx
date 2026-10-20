@@ -3,6 +3,7 @@ import { Center, Loader, Stack, Text, Button } from "@mantine/core";
 import type { AuthState, AuthUser } from "@rex/shared";
 import { App } from "./App";
 import { AuthScreen } from "./AuthScreen";
+import { AdminPanel, isAdminSection } from "./admin/AdminPanel";
 import { Landing } from "./Landing";
 import * as api from "./api";
 import { isAppRoute, parseAppPath, syncUrl } from "./routes";
@@ -87,6 +88,18 @@ export function Root() {
           if (route.kind === "login" || route.kind === "signup") navigate("/app", "replace");
         }}
       />
+    );
+  }
+
+  if (route.kind === "admin" && session.user.role === "admin") {
+    return (
+      <SessionContext.Provider value={session}>
+        <AdminPanel
+          section={isAdminSection(route.section) ? route.section : "overview"}
+          onNavigate={(section) => setPath(section === "overview" ? "/admin" : `/admin/${section}`)}
+          onBack={() => navigate("/app")}
+        />
+      </SessionContext.Provider>
     );
   }
 

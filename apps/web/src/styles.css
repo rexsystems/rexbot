@@ -691,3 +691,100 @@ body {
 .account-button[data-expanded] {
   background: #1c1b18;
 }
+
+.admin-topbar {
+  min-height: 72px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #28251f;
+  flex-shrink: 0;
+}
+
+.admin-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+.admin-content {
+  max-width: 1120px;
+  padding: 24px;
+  margin: 0 auto;
+}
+
+.admin-card {
+  background: #171614;
+  border-color: #28251f;
+}
+
+.admin-stat-value {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table th {
+  color: #b8b2a6;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.admin-log {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: #0c0b0a;
+  border: 1px solid #28251f;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d8d1c6;
+}
+
+.usage-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 160px;
+  padding-top: 8px;
+}
+
+.usage-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 3px 3px 0 0;
+  background: #b85f2a;
+  transition: background 0.15s ease;
+}
+
+.usage-bar:hover {
+  background: #f58b42;
+}
+
+.usage-bar.empty {
+  background: #28251f;
+}
+
+@media (max-width: 48em) {
+  .admin-topbar { padding: 8px 12px; min-height: 60px; }
+  .admin-content { padding: 16px 12px; }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

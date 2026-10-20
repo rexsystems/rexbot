@@ -153,6 +153,11 @@ export class QemuHost {
     try { fs.accessSync("/dev/kvm", fs.constants.R_OK | fs.constants.W_OK); return true; } catch { return false; }
   }
 
+  /** Guest IPv6 through user-mode networking; only useful when the host itself has IPv6. */
+  ipv6(): boolean {
+    return this.env.REX_QEMU_IPV6 === "1";
+  }
+
   template(): TemplateInfo | null {
     try {
       const info = JSON.parse(fs.readFileSync(this.templatePath, "utf8")) as TemplateInfo;
@@ -314,7 +319,8 @@ export class QemuMachine implements VmPower {
       "-drive", `if=virtio,file=${this.diskPath},format=qcow2,discard=unmap,cache=writeback`,
       "-drive", `file=${path.join(this.dir, "seed.iso")},media=cdrom,readonly=on`,
       // User-mode networking: outbound internet through the host, only SSH reachable, and only from loopback.
-      "-netdev", `user,id=net0,hostname=${this.spec.hostname},hostfwd=tcp:127.0.0.1:${this.spec.sshPort}-:22`,
+      // IPv6 is off unless asked for: on hosts without IPv6, guests otherwise try AAAA addresses first and apt stalls.
+      "-netdev", `user,id=net0,hostname=${this.spec.hostname},hostfwd=tcp:127.0.0.1:${this.spec.sshPort}-:22${this.host.ipv6() ? "" : ",ipv6=off"}`,
       "-device", "virtio-net-pci,netdev=net0",
       "-device", "virtio-rng-pci",
       "-display", "none",

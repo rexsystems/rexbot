@@ -256,3 +256,45 @@ export interface AuthState {
   signupOpen: boolean;
   workspaceName: string;
 }
+
+/** Admin panel data. Every number is counted from the database at request time. */
+export interface AdminOverview {
+  users: number;
+  activeUsers7d: number;
+  disabledUsers: number;
+  bots: number;
+  groups: number;
+  messages: number;
+  messages24h: number;
+  computers: { total: number; running: number; kind: ComputerBackendKind; templateVersion: number | null; buildRunning: boolean };
+  signupMode: AppSettings["signupMode"];
+}
+
+export interface AdminUser extends AuthUser {
+  bots: number;
+  messages: number;
+  sessions: number;
+  computerState: string | null;
+}
+
+export interface AdminComputer {
+  ownerId: string;
+  ownerName: string | null;
+  ownerEmail: string | null;
+  name: string;
+  state: string;
+  memoryMb: number;
+  cores: number;
+  diskGb: number;
+  diskUsedBytes: number;
+  templateVersion: number | null;
+  createdAt: string;
+  lastStartedAt: string | null;
+}
+
+export interface AdminUsage {
+  days: number;
+  daily: Array<{ day: string; messages: number; promptTokens: number; completionTokens: number }>;
+  byUser: Array<{ userId: string; name: string; email: string; messages: number; promptTokens: number; completionTokens: number }>;
+  byModel: Array<{ provider: string; model: string; requests: number; promptTokens: number; completionTokens: number }>;
+}

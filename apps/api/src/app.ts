@@ -2,6 +2,7 @@ import "./env.js";
 import { Hono } from "hono";
 import { requireUser, type AppEnv } from "./auth.js";
 import { authRoutes } from "./routes/auth.js";
+import { adminRoutes } from "./routes/admin.js";
 import { cors } from "hono/cors";
 import "./db.js";
 import {
@@ -87,6 +88,7 @@ app.route("/", computerRoutes);
 app.route("/", botRoutes);
 app.route("/", groupRoutes);
 app.route("/", voiceRoutes);
+app.route("/", adminRoutes);
 
 app.post("/messages/:id/reactions", async (c) => {
   const id = c.req.param("id");

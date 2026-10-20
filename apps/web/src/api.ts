@@ -1,4 +1,9 @@
 import type {
+  AdminComputer,
+  AdminOverview,
+  AdminUsage,
+  AdminUser,
+  AppSettings,
   AuthState,
   AuthUser,
   ChatMessage,
@@ -179,3 +184,24 @@ export const signUp = (name: string, email: string, password: string) => json<Si
 export const signOut = () => json<{ ok: boolean }>("/auth/logout", post()).finally(() => keepToken(undefined));
 export const updateProfile = (name: string) => json<{ user: AuthUser }>("/auth/profile", post({ name }));
 export const changePassword = (current: string, next: string) => json<{ ok: boolean }>("/auth/password", post({ current, next }));
+
+const send = (method: string, body: unknown = {}): RequestInit => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const id = (value: string) => encodeURIComponent(value);
+
+export const admin = {
+  overview: () => json<AdminOverview>("/admin/overview"),
+  users: (query = "") => json<AdminUser[]>(`/admin/users${query ? `?q=${encodeURIComponent(query)}` : ""}`),
+  createUser: (input: { email: string; name: string; password: string; role: "admin" | "user" }) => json<AuthUser>("/admin/users", post(input)),
+  updateUser: (userId: string, patch: Partial<Pick<AuthUser, "name" | "role" | "status">>) => json<AuthUser>(`/admin/users/${id(userId)}`, send("PATCH", patch)),
+  setPassword: (userId: string, password: string) => json<{ ok: boolean }>(`/admin/users/${id(userId)}/password`, post({ password })),
+  signOutUser: (userId: string) => json<{ ok: boolean }>(`/admin/users/${id(userId)}/sign-out`, post()),
+  deleteUser: (userId: string) => json<{ ok: boolean }>(`/admin/users/${id(userId)}`, { method: "DELETE" }),
+  computers: () => json<TemplateState & { kind: "qemu" | "podman"; computers: AdminComputer[] }>("/admin/computers"),
+  buildTemplate: (baseImageUrl?: string) => json<TemplateState["build"]>("/admin/computers/template", post({ baseImageUrl })),
+  computerAction: (ownerId: string, action: "start" | "stop" | "kill" | "reset") => json<{ ok: boolean }>(`/admin/computers/${id(ownerId)}/${action}`, post()),
+  resizeComputer: (ownerId: string, spec: { memoryMb?: number; cores?: number; diskGb?: number }) => json<{ ok: boolean }>(`/admin/computers/${id(ownerId)}`, send("PATCH", spec)),
+  serialLog: (ownerId: string) => json<{ log: string }>(`/admin/computers/${id(ownerId)}/serial`),
+  usage: (days: number) => json<AdminUsage>(`/admin/usage?days=${days}`),
+  settings: () => json<AppSettings>("/admin/settings"),
+  updateSettings: (patch: Partial<AppSettings>) => json<AppSettings>("/admin/settings", send("PATCH", patch)),
+};

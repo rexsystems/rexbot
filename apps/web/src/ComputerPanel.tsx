@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSession } from "./session";
 import { ActionIcon, Alert, Button, Group, Loader, Modal, ScrollArea, Stack, Text } from "@mantine/core";
 import type { ComputerSession, ComputerStatus } from "@rex/shared";
 import * as api from "./api";
@@ -78,6 +79,7 @@ function SetupBody({ status, error, refresh }: { status: ComputerStatus | null; 
 
 /** First-run state: the shared desktop image has not been built on this server yet. */
 function ImageSetup({ detail, refresh }: { detail: string; refresh: () => Promise<void> }) {
+  const isAdmin = useSession().user.role === "admin";
   const [build, setBuild] = useState<api.TemplateState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const running = build?.build.running ?? false;
@@ -100,6 +102,14 @@ function ImageSetup({ detail, refresh }: { detail: string; refresh: () => Promis
 
   const problems = build?.host.problems ?? [];
   const blocking = problems.filter((problem) => !problem.startsWith("/dev/kvm"));
+  if (!isAdmin) {
+    return (
+      <Stack gap={6}>
+        <Text fw={600} size="lg">{running ? "Your computer is almost ready" : "Computers aren't set up yet"}</Text>
+        <Text c="dimmed" size="sm">{running ? "An admin is building the computer image. This panel updates by itself when it's done." : "An admin needs to build the computer image first. Your bots can still chat and search the web."}</Text>
+      </Stack>
+    );
+  }
   return (
     <Stack gap="lg">
       <Stack gap={6}>
