@@ -1,3 +1,4 @@
+import type { ModelChoice } from "./providers.js";
 export type Role = "system" | "user" | "assistant" | "tool";
 
 export interface ChatMessage {
@@ -117,6 +118,8 @@ export interface BotProfile {
   /** Google Live prebuilt voice name. */
   voice: (typeof BOT_VOICES)[number];
   instructions: string;
+  /** This bot's own model; without one it uses the owner's active model. */
+  model?: ModelChoice;
 }
 export const DEFAULT_BOT: BotProfile = {
   name: "Rex", color: "#66b8ff", shape: "orb", motion: "float", blink: true, voice: "Kore", instructions: "",
@@ -132,6 +135,9 @@ export function normalizeBotProfile(value: Partial<BotProfile> | null | undefine
     blink: typeof value.blink === "boolean" ? value.blink : DEFAULT_BOT.blink,
     voice: BOT_VOICES.includes(value.voice as BotProfile["voice"]) ? value.voice as BotProfile["voice"] : DEFAULT_BOT.voice,
     instructions: typeof value.instructions === "string" ? value.instructions : "",
+    ...(value.model && typeof value.model.connectionId === "string" && typeof value.model.model === "string" && value.model.model.trim()
+      ? { model: { connectionId: value.model.connectionId, model: value.model.model.trim().slice(0, 200) } }
+      : {}),
   };
 }
 

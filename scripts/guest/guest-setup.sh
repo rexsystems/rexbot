@@ -6,6 +6,11 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export DEBIAN_FRONTEND=noninteractive
 
+# Some networks break apt's HTTPS transport while plain HTTP works. Debian packages are verified with GPG
+# signatures either way, so REX_APT_HTTP=1 (from REX_GUEST_APT_HTTP on the host) switches the mirrors to http.
+if [ "${REX_APT_HTTP:-}" = "1" ]; then
+  sed -i 's#https://#http://#g' /etc/apt/mirrors/*.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+fi
 # Fail here, not at install, when the mirrors are unreachable.
 apt-get update -o APT::Update::Error-Mode=any
 apt-get install -y --no-install-recommends \

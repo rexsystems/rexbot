@@ -5,6 +5,7 @@ import { streamChatCompletion, type LlmMessage, type LlmToolCall } from "./llm.j
 import { runTool } from "./tools/index.js";
 import { computers } from "./computer.js";
 import { exchangeReasoning, reasoningScope, responseReasoning } from "./reasoning.js";
+import { resolveModelSettings } from "./providers.js";
 
 export interface MessagingContext {
   ownerId?: string;
@@ -21,6 +22,11 @@ export async function messageBot(settings: ClientSettings, context: MessagingCon
   const to = getConversation(toId);
   if (!groupId || !from?.bot || !to?.bot) return "message_bot failed: these bots must share a group.";
   if (context.budget.remaining <= 0) return "message_bot failed: this turn's private-message budget is exhausted. Use the replies already received.";
+  // The teammate answers with its own model when it has one.
+  if (context.ownerId) {
+    try { settings = resolveModelSettings(context.ownerId, settings, to.bot, to.id); }
+    catch (error) { return `message_bot failed: ${error instanceof Error ? error.message : String(error)}`; }
+  }
   context.budget.remaining--;
   const history = listExchanges(groupId).filter((exchange) => (exchange.fromId === from.id && exchange.toId === to.id) || (exchange.fromId === to.id && exchange.toId === from.id)).slice(-6);
   const messages: LlmMessage[] = [

@@ -1,4 +1,8 @@
 import type {
+  ModelChoice,
+  ProviderConnection,
+  ProviderModel,
+  ProviderState,
   AdminComputer,
   AdminOverview,
   AdminUsage,
@@ -204,4 +208,13 @@ export const admin = {
   usage: (days: number) => json<AdminUsage>(`/admin/usage?days=${days}`),
   settings: () => json<AppSettings>("/admin/settings"),
   updateSettings: (patch: Partial<AppSettings>) => json<AppSettings>("/admin/settings", send("PATCH", patch)),
+};
+
+export const providers = {
+  state: () => json<ProviderState>("/providers"),
+  save: (input: { id?: string; provider?: string; label?: string; baseUrl?: string; apiKey?: string; defaultModel?: string }) =>
+    json<{ connection: ProviderConnection; state: ProviderState }>("/providers/connections", post(input)),
+  remove: (connectionId: string) => json<ProviderState>(`/providers/connections/${id(connectionId)}`, { method: "DELETE" }),
+  models: (input: { connectionId?: string; provider?: string; baseUrl?: string; apiKey?: string }) => json<{ models: ProviderModel[] }>("/providers/models", post(input)),
+  setActive: (choice: ModelChoice | null) => json<ProviderState>("/providers/active", send("PUT", choice)),
 };

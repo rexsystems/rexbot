@@ -37,6 +37,7 @@ import { db } from "../db.js";
 import { messageUploads } from "../uploads.js";
 import { activeChats, peers, selectGroupResponders } from "../groups.js";
 import { messageReasoning, reasoningScope, responseReasoning } from "../reasoning.js";
+import { hasUsableModel, resolveModelSettings, type ModelSettings } from "../providers.js";
 
 export const chatRoutes = new Hono<AppEnv>();
 
@@ -44,10 +45,12 @@ function sse(event: SseEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
-function normalizeSettings(raw: Partial<ClientSettings> | undefined): ClientSettings {
+function normalizeSettings(raw: Partial<ClientSettings> | undefined): ModelSettings {
   return {
     ...DEFAULT_SETTINGS,
     ...raw,
+    // Routing is decided on the server from the user's saved connections, never by the request.
+    route: undefined,
     llmApiKey: raw?.llmApiKey?.trim() ?? "",
     llmBaseUrl: raw?.llmBaseUrl?.trim() || DEFAULT_SETTINGS.llmBaseUrl,
     llmModel: raw?.llmModel?.trim() || DEFAULT_SETTINGS.llmModel,
@@ -84,9 +87,9 @@ chatRoutes.post("/chat", async (c) => {
     const upload = db.prepare("SELECT message_id FROM uploads WHERE id = ? AND user_id = ?").get(id, userId) as { message_id: string | null } | undefined;
     if (!upload || upload.message_id) return c.json({ error: "An attachment is missing or already sent. Attach it again." }, 400);
   }
-  const settings = normalizeSettings(body.settings);
-  if (!settings.llmApiKey) {
-    return c.json({ error: "LLM API key is missing. Add it in Settings." }, 400);
+  const clientSettings = normalizeSettings(body.settings);
+  if (!hasUsableModel(userId, clientSettings)) {
+    return c.json({ error: "Connect a model provider in Settings → Models first." }, 400);
   }
 
   let conversation = body.conversationId
@@ -101,6 +104,13 @@ chatRoutes.post("/chat", async (c) => {
   if (body.respondTo !== undefined && typeof body.respondTo !== "string") return c.json({ error: "Choose a valid responding bot." }, 400);
   const responders = conversation.kind === "group" ? selectGroupResponders(conversation.memberIds ?? [], message, body.respondTo) : [conversation];
   if (!responders.length) return c.json({ error: "Choose a current group member, or add bots to this group before sending." }, 400);
+  let responderSettings: ModelSettings[];
+  try {
+    responderSettings = responders.map((responder) => resolveModelSettings(userId, clientSettings, responder?.bot, responder?.bot ? responder.id : undefined));
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+  }
+  const settings = responderSettings[0]!;
   activeChats.add(conversation.id);
 
   const userMessage = insertMessage({
@@ -134,8 +144,9 @@ chatRoutes.post("/chat", async (c) => {
         send({ type: "conversation", conversation: conv });
         send({ type: "user_message", message: userMessage });
         const budget = { remaining: 6 };
-        for (const responder of responders) {
+        for (const [responderIndex, responder] of responders.entries()) {
         if (!responder) continue;
+        const settings = responderSettings[responderIndex]!;
         const speaker = responder.bot ? { botId: responder.id, botName: responder.bot.name } : {};
         if (speaker.botId && speaker.botName) send({ type: "speaker", botId: speaker.botId, botName: speaker.botName });
         const roster = peers(responder.id, conv.kind === "group" ? conv.id : undefined);

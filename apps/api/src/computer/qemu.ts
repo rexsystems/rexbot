@@ -485,7 +485,8 @@ export async function buildTemplate(host: QemuHost, options: TemplateBuildOption
     if (copy.code !== 0) throw new Error(`scp failed: ${copy.output}`);
     log("Installing the desktop (Xvfb, Openbox, noVNC, Chromium…). This takes several minutes…");
     // apt prints a line per package; "Setting up" and our own messages are the useful progress markers.
-    const setup = await run("ssh", [...ssh, target, "--", "sudo bash /tmp/rex-setup/guest-setup.sh"], {
+    const aptHttp = process.env.REX_GUEST_APT_HTTP === "1" ? "REX_APT_HTTP=1 " : "";
+    const setup = await run("ssh", [...ssh, target, "--", `sudo ${aptHttp}bash /tmp/rex-setup/guest-setup.sh`], {
       timeoutMs: 3_600_000,
       onLine: (line) => { if (/^(Setting up|E:|rex-sessiond|Err:|W: )/.test(line)) log(line); },
     });

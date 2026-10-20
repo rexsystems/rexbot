@@ -3,6 +3,7 @@ import { Alert, Button, ColorInput, Group, Modal, SegmentedControl, Select, Stac
 import { BOT_COLORS, BOT_VOICES, DEFAULT_BOT, suggestBotColor, suggestBotName, type BotProfile, type Conversation } from "@rex/shared";
 import { BlobAvatar } from "./BlobAvatar";
 import { saveBot } from "./api";
+import { BotModelPicker } from "./BotModelPicker";
 
 const SHAPE_OPTIONS: Array<{ value: BotProfile["shape"]; label: string }> = [
   { value: "orb", label: "Orb" }, { value: "pebble", label: "Pebble" }, { value: "cube", label: "Cube" }, { value: "capsule", label: "Capsule" }, { value: "diamond", label: "Diamond" },
@@ -69,6 +70,7 @@ export function BotEditor({ initial, existingNames, existingColors = [], onClose
           onChange={(voice) => { if (voice) setProfile({ ...profile, voice: voice as BotProfile["voice"] }); }}
         />
         <Textarea label="How should this bot work?" description="Optional instructions for its tone and approach." placeholder="For example: answer in Romanian and keep explanations short." value={profile.instructions} maxLength={1000} minRows={2} maxRows={6} autosize onChange={(event) => setProfile({ ...profile, instructions: event.currentTarget.value })} />
+        <BotModelPicker value={profile.model} onChange={(model) => setProfile((current) => { const { model: _drop, ...rest } = current; return model ? { ...rest, model } : rest; })} />
         {error ? <Alert color="red" title="Could not save bot" role="alert">{error}</Alert> : null}
         <Group justify="flex-end"><Button variant="default" onClick={onClose}>Cancel</Button><Button type="submit" loading={pending} disabled={!profile.name.trim() || !validColor}>{initial ? "Save bot" : "Create bot"}</Button></Group>
       </Stack>

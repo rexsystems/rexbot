@@ -33,7 +33,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open **[localhost:5173](http://localhost:5173)** for the product page, then **Open Rex** (or go to `/app`). The first visit asks you to create an account; the first account on a server is the admin and keeps any bots and chats that existed before accounts. Sign-up is closed after that until an admin opens it. In **Settings**, enter your model provider's API key, base URL, and model ID. The adapter uses the OpenAI-compatible Chat Completions interface. Defaults point to DeepSeek; choose a model that supports streaming and function tools.
+Open **[localhost:5173](http://localhost:5173)** for the product page, then **Open Rex** (or go to `/app`). The first visit asks you to create an account; the first account on a server is the admin and keeps any bots and chats that existed before accounts. Sign-up is closed after that until an admin opens it. In **Settings → Models**, connect a provider: OpenAI, Anthropic (native Messages API), Google Gemini, xAI, DeepSeek, OpenRouter, Mistral, Groq, a local Ollama or LM Studio, or any OpenAI-compatible server. Rex lists the provider's models live; pick one that supports streaming and function tools. Each bot can use its own model.
 
 Create a bot with the **+** beside **Your bots**, then send it a message. Add a Tavily key in Settings if you want web search. The **+** beside **Groups** opens the group editor.
 
@@ -164,7 +164,7 @@ Avatar meshes share **one WebGL renderer**. Animated visible characters follow t
 ## Data and access
 
 - SQLite and uploads live in `data/` by default, or the directory specified with `REX_DATA_DIR`.
-- Model keys are saved in browser local storage and sent to the local API when used. Chat text, selected memories, and tool results are sent to your configured model provider.
+- Provider keys are stored per account on the server, encrypted with AES-256-GCM (`REX_SECRET_KEY` or a generated `secret.key` in the data directory); the API returns only the last four characters. The older browser-stored key still works as a fallback. Members can only connect providers on public addresses; admins may use local ones. Chat text, selected memories, and tool results are sent to your configured model provider.
 - The Google key is sent to the local API for embeddings and ephemeral-token issuance; the live WebSocket uses only the short-lived token. Live settings stay in API memory for the session and any in-flight tool work. Google receives memory text for embeddings and microphone audio/context during voice calls.
 - Group history and private exchanges use the same configured provider. A private recipient receives its profile, the passed task, and up to six recent exchanges with that teammate in the shared group, rather than either bot's personal conversation history. Private exchanges are persisted locally and inspectable by the owner; "private" means outside the shared conversation, not hidden from the owner or model provider.
 - Every account has its own bots, groups, chats, memory, uploads, and computer; the API checks ownership on every request. Passwords are stored as scrypt hashes, sessions as SHA-256 hashes of a random token in an HttpOnly cookie. Admins manage accounts but do not read other people's chats.

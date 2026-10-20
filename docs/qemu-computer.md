@@ -49,6 +49,7 @@ Force a mode with `REX_QEMU_ACCEL=tcg`. Admins see the detected mode in Admin â†
 | `REX_VM_DIR` | `<data>/vms` | Where images, templates, keys and VM disks live |
 | `REX_QEMU_ACCEL` | auto | `tcg` forces software emulation |
 | `REX_QEMU_IPV6` | off | `1` gives guests IPv6 through user-mode networking; leave off when the host has no IPv6, or apt in the guest stalls on AAAA addresses |
+| `REX_GUEST_APT_HTTP` | off | `1` makes the image build use Debian mirrors over plain HTTP (packages stay GPG-verified). For networks whose proxy breaks apt's HTTPS |
 | `REX_QEMU_BINARY`, `REX_QEMU_IMG` | from `PATH` | Custom QEMU binaries |
 | `REX_QEMU_BASE_IMAGE_URL` | Debian 13 genericcloud amd64 | Cloud image used for new templates |
 

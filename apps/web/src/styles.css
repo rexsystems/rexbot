@@ -788,3 +788,49 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+.provider-logo {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #24221e;
+  border: 1px solid #39352e;
+}
+
+.provider-logo img {
+  display: block;
+}
+
+.provider-logo-letter {
+  font-weight: 600;
+  color: #f0ebe3;
+  line-height: 1;
+}
+
+.provider-tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #28251f;
+  background: #171614;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.provider-tile:hover,
+.provider-tile:focus-visible {
+  background: #1c1b18;
+  border-color: #514a40;
+}
+
+.provider-card {
+  background: #171614;
+  border-color: #28251f;
+}
+
+.provider-card.active {
+  border-color: #b85f2a;
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@mantine/hooks";
-import { botReplyText, DEFAULT_BOT } from "@rex/shared";
+import { botReplyText, DEFAULT_BOT, type ProviderState } from "@rex/shared";
 import {
   ActionIcon,
   Alert,
@@ -129,6 +129,8 @@ export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [providerState, setProviderState] = useState<ProviderState | null>(null);
+  useEffect(() => { api.providers.state().then(setProviderState).catch(() => undefined); }, []);
   const session = useSession();
   const [showComputer, setShowComputer] = useState(false);
   const [computerHasDesktop, setComputerHasDesktop] = useState(false);
@@ -343,9 +345,9 @@ export function App() {
   const send = async () => {
     const text = draft.trim();
     if ((!text && !attachments.items.length) || busy || (attachments.items.length > 0 && !attachments.ready)) return;
-    if (!settings.llmApiKey.trim()) {
+    if (!providerState?.active && !settings.llmApiKey.trim()) {
       setShowSettings(true);
-      setError("Add your LLM API key in Settings first.");
+      setError("Connect a model provider in Settings → Models first.");
       return;
     }
 
@@ -975,6 +977,7 @@ export function App() {
           initial={settings}
           onClose={() => setShowSettings(false)}
           onSave={onSaveSettings}
+          onProviders={setProviderState}
         />
       ) : null}
     </>

@@ -56,11 +56,20 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [ ] Workspace provider keys users may share (needs Phase 4).
 
 ### Phase 4: Model providers
-- [ ] Provider abstraction in the API: OpenAI-compatible adapter (OpenAI, xAI, DeepSeek, OpenRouter, Groq,
-      Mistral, Google Gemini OpenAI endpoint, Ollama/LM Studio local) and a native Anthropic Messages adapter.
-- [ ] Per-user provider connections stored server-side (encrypted), model picker per bot.
-- [ ] Provider logos stored in the repo (`apps/web/public/providers`), license noted in `docs/provider-logos.md`.
-- [ ] Polished provider settings UI (connection cards, test connection, model list).
+- [x] Provider registry (`packages/shared/src/providers.ts`): OpenAI, Anthropic, Google Gemini, xAI, DeepSeek,
+      OpenRouter, Mistral, Groq, Ollama, LM Studio, any OpenAI-compatible server. No hardcoded model ids:
+      models are listed live from each provider's `/models`.
+- [x] Adapter (`apps/api/src/llm.ts`): OpenAI-compatible streaming and a native Anthropic Messages adapter
+      (system prompt, tool_use/tool_result, streamed tool arguments) behind the same chunk interface.
+- [x] Per-user connections stored server-side, keys AES-256-GCM encrypted (`secrets.ts`), only `…last4` returned.
+      Active model per user, optional model per bot (also used when a teammate answers privately).
+- [x] SSRF: members can only connect providers on public addresses; admins may use local servers.
+- [x] Usage: token counts from providers (stream usage / Anthropic events) recorded in `usage_events`.
+- [x] Logos stored in `apps/web/public/providers`, sources and licenses in `docs/provider-logos.md`.
+- [x] Settings → Models: provider tiles with logos, connect/check/load models, edit, remove, active model picker;
+      bot editor model picker. Older browser-stored key kept as a fallback.
+- [ ] Workspace keys an admin shares with members (`shareWorkspaceKeys` setting exists, not wired yet).
+- [ ] Re-check provider URLs at request time against DNS rebinding (checked at save time today).
 
 ### Phase 5: Your own Claude / ChatGPT / Cursor accounts (research summary, see bottom)
 - [ ] Claude: Anthropic API key (Console). Optional: install unmodified Claude Code inside the user's VM and let
@@ -87,26 +96,28 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - Phase 3: `routes/admin.ts` (all behind `requireAdmin`), `test/admin.test.ts`, web `src/admin/*`
   (AdminPanel shell reuses the chat sidebar look; Overview, Users, Computers, Usage, WorkspaceSettings).
   Members see only "an admin needs to build the image" in the computer panel; host details are admin-only.
+- Phase 4: `providers.ts`, `secrets.ts`, `routes/providers.ts`, `test/providers.test.ts` (fake Anthropic server:
+  encryption at rest, model listing, tool round trip, usage rows); web `ModelsPanel.tsx`, `ProviderLogo.tsx`,
+  `BotModelPicker.tsx`, tabs in `SettingsModal.tsx`.
 
 ## In progress
 
 - Phase 1 verification on the dev box (nested KVM hangs here, so `REX_QEMU_ACCEL=tcg`). Found and fixed:
   guests tried IPv6 first on an IPv6-less host (now `ipv6=off` unless `REX_QEMU_IPV6=1`), and `apt-get update`
-  failures were silent (now fatal). Still open: apt over HTTPS times out through this box's egress proxy
-  (`198.18.0.1:443`); investigating whether that's the sandbox or something to handle in guest-setup.
+  failures were silent (now fatal). On this box apt's HTTPS transport times out through the sandbox proxy while
+  curl over HTTPS works, so the build here runs with `REX_GUEST_APT_HTTP=1` (GPG-verified packages over http).
 
 ## Known gaps
 
-- Model keys still live in browser local storage, so two accounts on one browser share them. Phase 4 moves
-  them server-side per account.
+- Tavily and Google keys still live in browser local storage (model keys moved server-side in Phase 4).
 - In the desktop app, `<img>` previews of uploads can't send the Bearer token; previews need a signed URL (todo).
 - Playwright tests that need the Podman computer fail on hosts without Podman (they did before accounts too).
 
 ## Where I stopped
 
-Phase 3 (admin panel) committed. Next: Phase 4 providers: a provider registry in `packages/shared`, an
-adapter layer in the API (OpenAI-compatible + native Anthropic), per-user encrypted keys server-side, provider
-logos in `apps/web/public/providers`, and usage recording into `usage_events`.
+Phase 4 (providers) committed. Next: Phase 5: Cursor Cloud Agents as a tool with the user's own Cursor API key,
+"Sign in with ChatGPT" (OAuth + PKCE) for self-hosted installs, and a clear Claude subscription note in
+Settings → Models. Then Phase 6 (routines, skills, bot rules, vision).
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
