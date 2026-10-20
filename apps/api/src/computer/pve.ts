@@ -28,12 +28,17 @@ export function pveConfigFromEnv(env: NodeJS.ProcessEnv = process.env): PveConfi
   const missing = Object.entries(required).filter(([, value]) => !value?.trim()).map(([key]) => key);
   if (!Number.isInteger(vmid) || vmid < 100) missing.push("REX_PROXMOX_VMID");
   if (missing.length) throw new Error(`Proxmox computer is missing ${missing.join(", ")}.`);
+  const tokenId = env.REX_PROXMOX_TOKEN_ID!.trim();
+  // Runtime must not use a host-admin token. Bots only SSH into the guest; this token only starts/stops that VM.
+  if (/^root@/i.test(tokenId) || tokenId.includes("@pam!")) {
+    throw new Error(`Refuse Proxmox token ${JSON.stringify(tokenId)}. Use a token limited to /vms/<VMID> (e.g. rex@pve!rex with VM.Audit and VM.PowerMgmt), not root@pam.`);
+  }
   return {
     url: url.replace(/\/+$/, ""),
     node: env.REX_PROXMOX_NODE!.trim(),
     vmid,
     vmName: env.REX_PROXMOX_VM_NAME?.trim() || "rex-computer",
-    tokenId: env.REX_PROXMOX_TOKEN_ID!.trim(),
+    tokenId,
     tokenSecret: env.REX_PROXMOX_TOKEN_SECRET!.trim(),
     insecureTls: env.REX_PROXMOX_INSECURE_TLS === "1",
     caFile: env.REX_PROXMOX_CA_FILE?.trim() || undefined,

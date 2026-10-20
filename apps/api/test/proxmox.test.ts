@@ -65,6 +65,7 @@ test("env config requires the scoped VM settings", () => {
   const parsed = pveConfigFromEnv({ REX_PROXMOX_URL: "https://pve:8006/", REX_PROXMOX_NODE: "pve", REX_PROXMOX_VMID: "180", REX_PROXMOX_TOKEN_ID: "a@pve!b", REX_PROXMOX_TOKEN_SECRET: "s" });
   assert.equal(parsed?.url, "https://pve:8006");
   assert.equal(parsed?.vmName, "rex-computer");
+  assert.throws(() => pveConfigFromEnv({ REX_PROXMOX_URL: "https://pve:8006", REX_PROXMOX_NODE: "pve", REX_PROXMOX_VMID: "180", REX_PROXMOX_TOKEN_ID: "root@pam!blana", REX_PROXMOX_TOKEN_SECRET: "s" }), /Refuse Proxmox token/);
 });
 
 test("refuses to control a VM with another name", async () => {
@@ -82,8 +83,8 @@ test("starts the VM on demand and only touches the configured VMID", async () =>
   assert.equal(status.desktop, true);
   assert.ok(pve.calls.includes("POST /nodes/pve/qemu/180/status/start"));
   assert.ok(pve.calls.every((call) => call.includes("/nodes/pve/qemu/180/")));
-  await computer.stop();
-  assert.ok(pve.calls.includes("POST /nodes/pve/qemu/180/status/shutdown"));
+  await assert.rejects(computer.stop(), /stays on/);
+  assert.ok(!pve.calls.some((call) => call.includes("shutdown")));
 });
 
 test("each bot gets its own screen, tunnel and view token", async () => {

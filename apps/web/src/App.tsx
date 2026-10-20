@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useMediaQuery } from "@mantine/hooks";
 import { botReplyText, DEFAULT_BOT } from "@rex/shared";
 import {
@@ -139,6 +139,8 @@ export function App() {
   const dragDepth = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const threadScrollRef = useRef<HTMLDivElement>(null);
+  const earlierScrollRestore = useRef<{ height: number; top: number } | null>(null);
+  const loadingEarlier = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [threadWindow, setThreadWindow] = useState(THREAD_WINDOW);
   const activeConversation = conversations.find((conversation) => conversation.id === activeId);
@@ -155,11 +157,26 @@ export function App() {
     return members.flatMap((item) => item.bot ? [{ id: item.id, name: item.bot.name }] : []);
   }, [activeConversation, conversations]);
 
+  // Screen always follows the bot you are looking at (group: last speaker, else first member).
+  const screenBotId = useMemo(() => {
+    if (!computerBots.length) return undefined;
+    if (activeConversation?.kind === "group") {
+      if (computerFocus && computerBots.some((bot) => bot.id === computerFocus)) return computerFocus;
+      return computerBots[0]?.id;
+    }
+    return computerBots[0]?.id;
+  }, [activeConversation, computerBots, computerFocus]);
+
+  useEffect(() => {
+    if (activeConversation?.bot) setComputerFocus(activeConversation.id);
+  }, [activeConversation?.id, activeConversation?.bot]);
+
   useEffect(() => {
     api.computerStatus().then((status) => {
       if (!status.desktop) return;
       setComputerHasDesktop(true);
-      if (status.running && window.matchMedia("(min-width: 75em)").matches) setShowComputer(true);
+      if (window.matchMedia("(min-width: 75em)").matches) setShowComputer(true);
+      if (status.available && !status.running) void api.startComputer().catch(() => undefined);
     }).catch(() => undefined);
   }, []);
   const lastVisibleMessageId = lastVisible?.kind === "message" ? lastVisible.message.id : undefined;
@@ -205,7 +222,7 @@ export function App() {
   const hasBots = bots.length > 0;
 
   useEffect(() => {
-    if (thread.length === 0) return;
+    if (thread.length === 0 || earlierScrollRestore.current) return;
     const scroller = threadScrollRef.current;
     if (scroller) {
       const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
@@ -213,6 +230,24 @@ export function App() {
     }
     bottomRef.current?.scrollIntoView({ behavior: busy ? "auto" : "smooth" });
   }, [thread, busy]);
+
+  useLayoutEffect(() => {
+    const scroller = threadScrollRef.current;
+    const pending = earlierScrollRestore.current;
+    if (!scroller || !pending) return;
+    scroller.scrollTop = pending.top + (scroller.scrollHeight - pending.height);
+    earlierScrollRestore.current = null;
+    loadingEarlier.current = false;
+  }, [threadWindow, visibleThread.length]);
+
+  const onThreadScroll = useCallback(() => {
+    const scroller = threadScrollRef.current;
+    if (!scroller || loadingEarlier.current || hiddenThreadCount <= 0) return;
+    if (scroller.scrollTop > 72) return;
+    loadingEarlier.current = true;
+    earlierScrollRestore.current = { height: scroller.scrollHeight, top: scroller.scrollTop };
+    setThreadWindow((count) => Math.min(thread.length, count + THREAD_WINDOW));
+  }, [hiddenThreadCount, thread.length]);
 
   const openConversation = useCallback(async (id: string, opts?: { history?: "push" | "replace" | "none" }) => {
     setError(null);
@@ -609,7 +644,7 @@ export function App() {
             </Group>
 
             <div className="chat-column">
-            <Box ref={threadScrollRef} className={`thread-scroll${thread.length === 0 ? " thread-empty" : ""}`}>
+            <Box ref={threadScrollRef} className={`thread-scroll${thread.length === 0 ? " thread-empty" : ""}`} onScroll={onThreadScroll}>
               <Stack gap="sm" className={thread.length === 0 ? "thread-empty-stack" : "thread-stack"}>
                 {thread.length === 0 ? (
                   <Stack className="empty-chat" align="center" justify="center" gap="lg">
@@ -627,17 +662,6 @@ export function App() {
                   </Stack>
                 ) : (
                   <>
-                  {hiddenThreadCount > 0 ? (
-                    <Group justify="center">
-                      <Button
-                        variant="default"
-                        size="compact-md"
-                        onClick={() => setThreadWindow((count) => count + THREAD_WINDOW)}
-                      >
-                        Load earlier messages ({hiddenThreadCount})
-                      </Button>
-                    </Group>
-                  ) : null}
                   {visibleThread.map((item) => {
                     if (item.kind === "tool") {
                       const result = item.tool === "computer_exec" ? computerResult(item.detail) : null;
@@ -840,7 +864,7 @@ export function App() {
             </div>
           </div>
         </AppShell.Main>
-        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></AppShell.Aside> : null}
+        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={screenBotId} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></AppShell.Aside> : null}
 
       </AppShell>
 
@@ -884,7 +908,7 @@ export function App() {
           </ScrollArea>
         </Drawer>
 
-      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={computerFocus} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
+      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={screenBotId} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
 
       {groupEditor ? <GroupEditor initial={groupEditor === "new" ? undefined : groupEditor} bots={conversations} onBotCreated={(bot) => setConversations((prev) => [bot, ...prev.filter((c) => c.id !== bot.id)])} onClose={() => setGroupEditor(null)} onSave={(group) => {
         const isNew = groupEditor === "new";

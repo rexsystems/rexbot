@@ -9,6 +9,6 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new)
 
 "${SSH[@]}" "rex@$HOST" "rm -rf /tmp/rex-setup && mkdir -p /tmp/rex-setup"
-scp -i "$KEY" -o IdentitiesOnly=yes "$HERE/rex-sessiond" "$HERE/rex-sessiond-boot.service" "$HERE/guest-setup.sh" "rex@$HOST:/tmp/rex-setup/"
+scp -i "$KEY" -o IdentitiesOnly=yes "$HERE/rex-sessiond" "$HERE/rex-browser" "$HERE/rex-sessiond-boot.service" "$HERE/guest-setup.sh" "rex@$HOST:/tmp/rex-setup/"
 "${SSH[@]}" "rex@$HOST" "sudo bash /tmp/rex-setup/guest-setup.sh"
 "${SSH[@]}" "rex@$HOST" "rex-sessiond ping"

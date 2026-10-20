@@ -2,15 +2,18 @@
 
 One Debian VM, named `rex-computer`, shared by every bot. Each bot gets its own 1280×800 screen (Xvfb + Openbox + tint2), a private folder `/workspace/bots/<bot id>`, and the shared folder `/workspace/shared`. The Rex API talks to Proxmox only to check and start that one VM, and to the guest over SSH for everything else. noVNC is bound to localhost inside the VM and reaches your browser through an SSH tunnel and the Rex API, so nothing new is exposed on your LAN.
 
-## Lazy path (recommended)
+## Lazy path (recommended) — all from the UI
 
-1. Once, so Rex can talk to Proxmox as root: `ssh-copy-id root@192.168.100.25`  
-   Or install `sshpass` and paste the root password in the panel.
-2. Start Rex (`pnpm dev`), open the computer panel, expand **Set up Proxmox desktop**.
-3. Fill host (`192.168.100.25`), node (`pve`), a free VMID, and a static guest IP (example: `ip=192.168.100.50/24,gw=192.168.100.1`).
-4. Click **Create rex-computer and wire Rex**. Sit back.
+1. Start Rex (`pnpm dev`), open the computer panel.
+2. Under **Set up the shared desktop**, paste the Proxmox **root password** (used once; not saved). Host/node/storage defaults match a typical LAN setup; open **Advanced** only if you need to change them.
+3. Click **Create computer & connect**. Sit back.
 
-That call hits `POST /computer/bootstrap` on the local API. It generates `~/.ssh/rex_computer` if needed, creates only a new VM named `rex-computer`, makes a token limited to that VMID, runs `install-guest.sh`, writes the Proxmox block into `.env`, and hot-swaps the computer backend. No restart. Other VMs are never touched: the script refuses an existing VMID or an existing `rex-computer` name.
+That hits `POST /computer/bootstrap`. It generates `~/.ssh/rex_computer` if needed, creates only a new VM named `rex-computer` (or finishes an existing one), makes token `rex@pve!rex` with **only** `VM.Audit` + `VM.PowerMgmt` on that VMID, installs the guest desktop, writes `.env`, and hot-swaps the backend. No restart. Other VMs are never touched.
+
+**Who can reach what after setup:**
+- Bots: SSH into the guest as `rex` only. No Proxmox API, no other VMs.
+- Rex API: Proxmox only to start/stop/check that one VM (scoped token). Shell and screens go over SSH to the guest.
+- `root@pam` tokens are refused in `.env`. Do not put host-admin tokens there.
 
 ## Manual path
 

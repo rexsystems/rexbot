@@ -22,7 +22,7 @@ const PODMAN_EXEC: ToolDefinition = {
 
 const DESKTOP_EXEC: ToolDefinition = {
   name: "computer_exec",
-  description: "Run a bash command on Rex Computer, a Linux VM shared by every bot. Your working directory is /workspace/bots/<your id>; /workspace/shared is shared with all bots and persists. You have passwordless sudo: install packages with `sudo apt-get install -y <pkg>`, compile tools, pull git repos, browse the web. DISPLAY points at your own screen, so GUI apps you launch appear there; start them detached, e.g. `setsid -f firefox-esr https://example.com >/dev/null 2>&1`. The VM has network access. Commands time out after 5 minutes. It is not the user's computer.",
+  description: "Run a bash command on Rex Computer, a Linux VM shared by every bot. Your working directory is /workspace/bots/<your id>; /workspace/shared is shared with all bots and persists. You have passwordless sudo: install packages with `sudo apt-get install -y <pkg>`, compile tools, pull git repos, browse the web. DISPLAY and a session dbus are set for your screen. Launch GUI apps detached, e.g. `setsid -f rex-browser https://example.com >/dev/null 2>&1` (Chromium on Xvfb) or `setsid -f xterm >/dev/null 2>&1`. Clipboard: `xclip`. Commands time out after 5 minutes. It is not the user's computer.",
   parameters: {
     type: "object",
     properties: { command: { type: "string", description: "Bash command to run on the VM" } },

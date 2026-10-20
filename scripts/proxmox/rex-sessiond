@@ -2,8 +2,8 @@
 """Per-bot screens on the shared Rex Computer VM.
 
 Invoked by the Rex API over SSH, one subcommand per call. Each bot gets its own
-Xvfb display with Openbox, tint2, x11vnc and websockify bound to localhost.
-State lives in /var/lib/rex-sessiond and is cleared at boot by `reset`.
+Xvfb display with Openbox, tint2, a private dbus session, x11vnc and websockify
+on localhost. State lives in /var/lib/rex-sessiond and is cleared at boot by `reset`.
 """
 import fcntl
 import json
@@ -73,18 +73,24 @@ def alive(pid):
         return False
 
 
+def kill_pid(pid, sig):
+    try:
+        os.killpg(pid, sig)
+        return
+    except OSError:
+        pass
+    try:
+        os.kill(pid, sig)
+    except OSError:
+        pass
+
+
 def kill_session(session):
     for pid in reversed(session.get("pids", [])):
-        try:
-            os.killpg(pid, signal.SIGTERM)
-        except OSError:
-            pass
+        kill_pid(pid, signal.SIGTERM)
     time.sleep(0.3)
     for pid in session.get("pids", []):
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except OSError:
-            pass
+        kill_pid(pid, signal.SIGKILL)
     display = session.get("display", "")
     if display.startswith(":"):
         num = display[1:]
@@ -96,7 +102,36 @@ def kill_session(session):
 
 
 def session_alive(session):
-    return bool(session.get("pids")) and all(alive(pid) for pid in session["pids"])
+    # Xvfb is always first; if it dies the screen is gone.
+    pids = session.get("pids") or []
+    return bool(pids) and alive(pids[0])
+
+
+def dbus_env(base):
+    """Start a session bus for this screen (Chromium and friends need it)."""
+    try:
+        out = subprocess.check_output(["dbus-launch", "--sh-syntax"], env=base, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as err:
+        fail(f"dbus-launch failed: {err}", 3)
+    env = dict(base)
+    pid = None
+    for raw in out.splitlines():
+        line = raw.strip().removeprefix("export ").rstrip(";")
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip().strip("'\"")
+        if key == "DBUS_SESSION_BUS_ADDRESS":
+            env[key] = value
+        elif key == "DBUS_SESSION_BUS_PID":
+            try:
+                pid = int(value)
+            except ValueError:
+                pid = None
+            env[key] = value
+    if "DBUS_SESSION_BUS_ADDRESS" not in env:
+        fail("dbus-launch returned no bus address", 3)
+    return env, pid
 
 
 def bot_dir(bot):
@@ -134,6 +169,9 @@ def start_session(bot, slot):
     if not wait_for_display(display):
         kill_session({"display": display, "pids": pids})
         fail("Xvfb did not start", 3)
+    env, dbus_pid = dbus_env(env)
+    if dbus_pid:
+        pids.append(dbus_pid)
     subprocess.run(["xsetroot", "-solid", "#1b1915"], env=env, check=False)
     pids.append(spawn(["openbox"], env))
     pids.append(spawn(["tint2"], env))
@@ -142,7 +180,8 @@ def start_session(bot, slot):
     pids.append(spawn(["websockify", "--web", NOVNC_WEB, f"127.0.0.1:{ws_port}", f"127.0.0.1:{vnc_port}"], env))
     time.sleep(0.6)
     return {"botId": bot, "slot": slot, "display": display, "vncPort": vnc_port, "wsPort": ws_port,
-            "width": WIDTH, "height": HEIGHT, "locked": False, "pids": pids, "lastUsed": time.time()}
+            "width": WIDTH, "height": HEIGHT, "locked": False, "pids": pids,
+            "dbus": env.get("DBUS_SESSION_BUS_ADDRESS"), "lastUsed": time.time()}
 
 
 def public(session):
@@ -212,8 +251,13 @@ def run_exec(bot):
     }
     if session:
         env["DISPLAY"] = session["display"]
+        if session.get("dbus"):
+            env["DBUS_SESSION_BUS_ADDRESS"] = session["dbus"]
     else:
         env.pop("DISPLAY", None)
+        env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+    # Browser shortcut for bots (Chromium with Xvfb-safe flags).
+    env["BROWSER"] = "rex-browser"
     proc = subprocess.run(["timeout", "--kill-after=5", str(EXEC_TIMEOUT), "bash", "-lc", command], cwd=home, env=env,
                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     sys.stdout.write(proc.stdout.decode("utf-8", "replace")[:OUTPUT_LIMIT])
@@ -271,8 +315,14 @@ def run_screenshot(bot):
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, time.strftime("%Y%m%d-%H%M%S") + ".png")
     env = {**os.environ, "DISPLAY": display}
-    subprocess.run(["import", "-window", "root", path], env=env, timeout=20, check=False,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if session.get("dbus"):
+        env["DBUS_SESSION_BUS_ADDRESS"] = session["dbus"]
+    if shutil.which("scrot"):
+        subprocess.run(["scrot", "-z", path], env=env, timeout=20, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.run(["import", "-window", "root", path], env=env, timeout=20, check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     active = xdo(display, "getactivewindow", "getwindowname").stdout.decode("utf-8", "replace").strip()
     listing = subprocess.run(["wmctrl", "-l"], env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              timeout=10, check=False).stdout.decode("utf-8", "replace")
@@ -310,7 +360,7 @@ def main():
         fail("usage: rex-sessiond ping|status|reset|ensure|release|lock|unlock|exec|input|screenshot [bot-id]")
     command, arg = sys.argv[1], (sys.argv[2] if len(sys.argv) > 2 else None)
     if command == "ping":
-        missing = [tool for tool in ("Xvfb", "openbox", "x11vnc", "websockify", "xdotool") if not shutil.which(tool)]
+        missing = [tool for tool in ("Xvfb", "openbox", "x11vnc", "websockify", "xdotool", "dbus-launch", "scrot") if not shutil.which(tool)]
         print("ok" if not missing else "missing " + " ".join(missing))
         sys.exit(0 if not missing else 6)
     if command == "status":

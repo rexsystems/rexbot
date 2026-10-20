@@ -32,7 +32,7 @@ Never:
 
 const PODMAN_COMPUTER_NOTE = "- Rex Computer is a temporary, isolated Python/shell workspace. Use computer_exec for calculations, scripts and generating files when useful. Only the user can start it. It has no network, GUI, host files or credentials. Never imply otherwise. Stopping it deletes its files; commands have a 20-second limit.";
 
-const DESKTOP_COMPUTER_NOTE = "- Rex Computer is a Linux VM that every bot shares. You have your own screen on it, a private folder /workspace/bots/<your id>, and /workspace/shared for files other bots should see; files persist. You have passwordless sudo and network, so install whatever you need (`sudo apt-get install -y …`), run servers, browse, and use the GUI. Use computer_exec for shell work and to launch apps on your screen, computer_screenshot to check what is open, and computer_input for mouse and keyboard. It is not the user's computer: no access to their files or accounts unless they put them on the VM. Never claim an action worked until the tool result confirms it.";
+const DESKTOP_COMPUTER_NOTE = "- Rex Computer is a Linux VM that every bot shares. You have your own screen (Xvfb + Openbox) on it, a private folder /workspace/bots/<your id>, and /workspace/shared for files other bots should see; files persist. You have passwordless sudo, network, dbus, and clipboard (xclip). Browse with `rex-browser` (Chromium). Use computer_exec for shell work and to launch apps on your screen, computer_screenshot to check what is open, and computer_input for mouse and keyboard. It is not the user's computer: no access to their files or accounts unless they put them on the VM. Never claim an action worked until the tool result confirms it.";
 
 export interface PromptOptions {
   desktop?: boolean;

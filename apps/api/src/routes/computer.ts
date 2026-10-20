@@ -75,7 +75,10 @@ computerRoutes.post("/computer/:action", async (c) => {
   try {
     const action = c.req.param("action");
     if (action === "start") return c.json(await computer.start());
-    if (action === "stop") return c.json(await computer.stop());
+    if (action === "stop") {
+      if (isDesktopComputer(computer)) return c.json({ error: "Rex Computer stays on. There is no shut down from the app." }, 400);
+      return c.json(await computer.stop());
+    }
     if (action === "exec") {
       const body = await c.req.json() as { command?: unknown; botId?: unknown };
       const botId = typeof body.botId === "string" && body.botId ? body.botId : undefined;

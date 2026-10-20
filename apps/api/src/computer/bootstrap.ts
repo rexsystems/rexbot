@@ -143,31 +143,52 @@ async function runBootstrap(raw: BootstrapRequest): Promise<BootstrapResult> {
   if (!Number.isInteger(vmid) || vmid < 100 || vmid > 999_999_999) throw new Error("vmid must be an integer ≥ 100.");
 
   const exists = await pve(["qm", "status", String(vmid)]);
-  if (exists.code === 0) throw new Error(`VMID ${vmid} already exists. Pick another id; Rex never modifies existing VMs.`);
-  const named = await pve(["bash", "-lc", "qm list | awk 'NR>1{print $2}' | grep -qx rex-computer"]);
-  if (named.code === 0) throw new Error("A VM named rex-computer already exists. Point .env at it instead of creating another.");
+  const config = exists.code === 0 ? await pve(["qm", "config", String(vmid)]) : { code: 1, output: "" };
+  const existingName = /^name:\s*(.+)$/m.exec(config.output)?.[1]?.trim() ?? "";
+  const listed = await pve(["qm", "list"]);
+  const namedElsewhere = listed.output.split("\n").some((line) => {
+    const parts = line.trim().split(/\s+/);
+    return parts[0] !== String(vmid) && parts[1] === "rex-computer";
+  });
 
-  step(`Uploading create-vm.sh and SSH public key…`);
-  await pveUpload(pveHost, pveKey, password, guestPub, "/root/rex_computer.pub");
-  await pveUpload(pveHost, pveKey, password, path.join(SCRIPT_DIR, "create-vm.sh"), "/root/create-vm.sh");
+  if (exists.code === 0 && existingName !== "rex-computer") {
+    throw new Error(`VMID ${vmid} already exists as ${JSON.stringify(existingName || "?")}. Pick another id; Rex never modifies other VMs.`);
+  }
+  if (namedElsewhere) {
+    throw new Error("A VM named rex-computer already exists on another VMID. Point .env at it instead of creating another.");
+  }
 
-  step(`Creating VM ${vmid} (this downloads the cloud image if needed)…`);
-  const create = await pve([
-    "env",
-    `VMID=${vmid}`,
-    `SSH_KEY_FILE=/root/rex_computer.pub`,
-    `STORAGE=${storage}`,
-    `BRIDGE=${bridge}`,
-    `MEMORY=${memory}`,
-    `CORES=${cores}`,
-    `DISK=${disk}`,
-    `IPCONFIG=${ipconfig}`,
-    "bash", "/root/create-vm.sh",
-  ], 600_000);
-  if (create.code !== 0) throw new Error(`create-vm.sh failed:\n${create.output.slice(-2000)}`);
-  log.push(...create.output.split("\n").slice(-8));
+  if (exists.code === 0 && existingName === "rex-computer") {
+    step(`VM ${vmid} (rex-computer) already exists — finishing setup.`);
+    if (!exists.output.includes("status: running")) {
+      step("Starting VM…");
+      await pve(["qm", "start", String(vmid)], 120_000);
+    }
+  } else {
+    step(`Uploading create-vm.sh and SSH public key…`);
+    await pveUpload(pveHost, pveKey, password, guestPub, "/root/rex_computer.pub");
+    await pveUpload(pveHost, pveKey, password, path.join(SCRIPT_DIR, "create-vm.sh"), "/root/create-vm.sh");
 
-  step("Creating a Proxmox API token scoped to that VM…");
+    step(`Creating VM ${vmid} (this downloads the cloud image if needed)…`);
+    const create = await pve([
+      "env",
+      `VMID=${vmid}`,
+      `SSH_KEY_FILE=/root/rex_computer.pub`,
+      `STORAGE=${storage}`,
+      `BRIDGE=${bridge}`,
+      `MEMORY=${memory}`,
+      `CORES=${cores}`,
+      `DISK=${disk}`,
+      `IPCONFIG=${ipconfig}`,
+      "bash", "/root/create-vm.sh",
+    ], 600_000);
+    if (create.code !== 0) throw new Error(`create-vm.sh failed:\n${create.output.slice(-2000)}`);
+    log.push(...create.output.split("\n").slice(-8));
+  }
+
+  // Runtime token is always rex@pve!rex with rights only on this VMID.
+  // Never keep a root@pam token in .env — bots never talk to Proxmox; the API only starts/stops this VM.
+  step("Creating API token rex@pve!rex (only /vms/" + vmid + ")…");
   const token = await ensureToken(pve, vmid);
 
   const staticIp = parseGuestIp(ipconfig);
@@ -175,10 +196,19 @@ async function runBootstrap(raw: BootstrapRequest): Promise<BootstrapResult> {
   const guestIp = staticIp ?? await waitForAgentIp(pve, vmid);
   await waitForSsh(guestIp, guestKey);
 
-  step("Installing desktop session manager inside the VM…");
-  const install = await run("bash", [path.join(SCRIPT_DIR, "install-guest.sh"), guestIp, guestKey], { timeoutMs: 600_000 });
-  if (install.code !== 0) throw new Error(`install-guest.sh failed:\n${install.output.slice(-2000)}`);
-  log.push(...install.output.split("\n").slice(-6));
+  const alreadyReady = await run("ssh", [
+    "-i", guestKey, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "IdentitiesOnly=yes", "-o", "ConnectTimeout=5",
+    `rex@${guestIp}`, "--", "rex-sessiond", "ping",
+  ], { timeoutMs: 20_000 });
+  if (alreadyReady.code === 0 && alreadyReady.output.includes("ok")) {
+    step("Guest already has rex-sessiond — skipping install.");
+  } else {
+    step("Installing desktop session manager inside the VM…");
+    const install = await run("bash", [path.join(SCRIPT_DIR, "install-guest.sh"), guestIp, guestKey], { timeoutMs: 600_000 });
+    if (install.code !== 0) throw new Error(`install-guest.sh failed:\n${install.output.slice(-2000)}`);
+    log.push(...install.output.split("\n").slice(-6));
+  }
 
   const values = {
     REX_COMPUTER_BACKEND: "proxmox",
@@ -225,19 +255,37 @@ async function ensureKey(privateKey: string) {
   fs.chmodSync(privateKey, 0o600);
 }
 
+/** Password SSH/SCP via pexpect so the UI does not need sshpass installed. */
+async function runWithPassword(command: "ssh" | "scp", args: string[], password: string, timeoutMs: number): Promise<RunResult> {
+  const script = [
+    "import pexpect, sys",
+    `child = pexpect.spawn(${JSON.stringify(command)}, ${JSON.stringify(args)}, encoding="utf-8", timeout=${Math.ceil(timeoutMs / 1000)})`,
+    "child.logfile_read = sys.stdout",
+    "try:",
+    "  i = child.expect(['[Pp]assword:', pexpect.EOF, pexpect.TIMEOUT], timeout=30)",
+    "  if i == 0:",
+    `    child.sendline(${JSON.stringify(password)})`,
+    "    child.expect(pexpect.EOF)",
+    "except pexpect.EOF:",
+    "  pass",
+    "sys.stderr.write(str(child.exitstatus if child.exitstatus is not None else 1))",
+  ].join("\n");
+  const result = await run("python3", ["-c", script], { timeoutMs: timeoutMs + 10_000 });
+  // pexpect prints remote output on stdout; exit code is on stderr from our script.
+  const code = Number(/(\d+)\s*$/.exec(result.output)?.[1] ?? result.code);
+  return { code: Number.isFinite(code) ? code : 1, output: result.output.replace(/\d+\s*$/, "").trim() };
+}
+
 function makePveRunner(host: string, key: string | undefined, password: string) {
   return async (remote: string[], timeoutMs = 120_000): Promise<RunResult> => {
     if (password) {
-      const sshpass = await run("bash", ["-lc", "command -v sshpass"], { timeoutMs: 5_000 });
-      if (sshpass.code !== 0) throw new Error("sshpass is required for password login. Install it (Fedora: sudo dnf install sshpass) or ssh-copy-id your key to root@Proxmox once.");
-      return run("sshpass", [
-        "-e", "ssh",
+      return runWithPassword("ssh", [
         "-o", "StrictHostKeyChecking=accept-new",
         "-o", "PreferredAuthentications=password",
         "-o", "PubkeyAuthentication=no",
         "-o", "NumberOfPasswordPrompts=1",
         `root@${host}`, "--", ...remote,
-      ], { env: { SSHPASS: password }, timeoutMs });
+      ], password, timeoutMs);
     }
     const args = [
       "-o", "BatchMode=yes",
@@ -251,13 +299,12 @@ function makePveRunner(host: string, key: string | undefined, password: string) 
 
 async function pveUpload(host: string, key: string | undefined, password: string, local: string, remote: string) {
   if (password) {
-    const result = await run("sshpass", [
-      "-e", "scp",
+    const result = await runWithPassword("scp", [
       "-o", "StrictHostKeyChecking=accept-new",
       "-o", "PreferredAuthentications=password",
       "-o", "PubkeyAuthentication=no",
       local, `root@${host}:${remote}`,
-    ], { env: { SSHPASS: password }, timeoutMs: 120_000 });
+    ], password, 120_000);
     if (result.code !== 0) throw new Error(`scp failed: ${result.output.slice(0, 500)}`);
     return;
   }
@@ -268,18 +315,23 @@ async function pveUpload(host: string, key: string | undefined, password: string
 }
 
 async function pickVmid(pve: (remote: string[], timeoutMs?: number) => Promise<RunResult>) {
-  const listed = await pve(["bash", "-lc", "qm list | awk 'NR>1{print $1}'"]);
-  const used = new Set(listed.output.split(/\s+/).map(Number).filter((n) => Number.isInteger(n)));
+  const listed = await pve(["qm", "list"]);
+  const used = new Set(
+    listed.output.split("\n").slice(1).map((line) => Number(line.trim().split(/\s+/)[0])).filter((n) => Number.isInteger(n)),
+  );
   for (let id = 180; id < 900; id++) if (!used.has(id)) return id;
   throw new Error("No free VMID between 180 and 899.");
 }
 
 async function ensureToken(pve: (remote: string[], timeoutMs?: number) => Promise<RunResult>, vmid: number) {
-  await pve(["bash", "-lc", 'pveum role add RexComputer -privs "VM.Audit VM.PowerMgmt" 2>/dev/null || true']);
-  await pve(["bash", "-lc", "pveum user add rex@pve 2>/dev/null || true"]);
-  await pve(["bash", "-lc", `pveum aclmod /vms/${vmid} -user rex@pve -role RexComputer`]);
-  await pve(["bash", "-lc", "pveum user token remove rex@pve rex 2>/dev/null || true"]);
-  const created = await pve(["bash", "-lc", "pveum user token add rex@pve rex --privsep 0"]);
+  // Proxmox 9: acl modify / token delete (not the older aclmod aliases).
+  const added = await pve(["pveum", "role", "add", "RexComputer", "--privs", "VM.Audit,VM.PowerMgmt"]);
+  if (added.code !== 0) await pve(["pveum", "role", "modify", "RexComputer", "--privs", "VM.Audit,VM.PowerMgmt"]);
+  await pve(["pveum", "user", "add", "rex@pve"]);
+  const acl = await pve(["pveum", "acl", "modify", `/vms/${vmid}`, "--users", "rex@pve", "--roles", "RexComputer"]);
+  if (acl.code !== 0) throw new Error(`Could not scope token ACL to VM ${vmid}:\n${acl.output.slice(0, 500)}`);
+  await pve(["pveum", "user", "token", "delete", "rex@pve", "rex"]);
+  const created = await pve(["pveum", "user", "token", "add", "rex@pve", "rex", "--privsep", "0"]);
   if (created.code !== 0) throw new Error(`Could not create API token:\n${created.output.slice(0, 800)}`);
   const secret = created.output.match(/\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i)?.[1]
     ?? created.output.match(/\|\s*value\s*\|\s*([^\s|]+)\s*\|/i)?.[1];
@@ -290,7 +342,7 @@ async function ensureToken(pve: (remote: string[], timeoutMs?: number) => Promis
 async function waitForAgentIp(pve: (remote: string[], timeoutMs?: number) => Promise<RunResult>, vmid: number) {
   const deadline = Date.now() + 180_000;
   while (Date.now() < deadline) {
-    const result = await pve(["bash", "-lc", `qm guest cmd ${vmid} network-get-interfaces 2>/dev/null || true`], 30_000);
+    const result = await pve(["qm", "guest", "cmd", String(vmid), "network-get-interfaces"], 30_000);
     const ips = [...result.output.matchAll(/"ip-address"\s*:\s*"(\d+\.\d+\.\d+\.\d+)"/g)]
       .map((match) => match[1]!)
       .filter((ip) => ip !== "127.0.0.1");

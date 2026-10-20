@@ -44,6 +44,9 @@ export const bootstrapComputer = (body: {
   ipconfig?: string;
   storage?: string;
   bridge?: string;
+  memory?: number;
+  cores?: number;
+  disk?: string;
   pvePassword?: string;
   pveSshKey?: string;
   writeEnv?: boolean;

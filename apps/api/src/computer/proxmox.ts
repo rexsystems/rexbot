@@ -155,13 +155,8 @@ export class ProxmoxComputer {
   }
 
   async stop(): Promise<ComputerStatus> {
-    if (this.busyBots.size) throw new Error("A bot is using Rex Computer. Try again when it finishes.");
-    this.stopping = true;
-    try {
-      this.reset();
-      await this.pve.shutdown();
-    } finally { this.stopping = false; }
-    return this.status();
+    // The shared desktop stays on. Power-off only from Proxmox if you really need it.
+    throw new Error("Rex Computer stays on. There is no shut down from the app.");
   }
 
   private reset() {

@@ -8,11 +8,13 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
   qemu-guest-agent openssh-server python3 python3-pip python3-venv git curl ca-certificates \
-  xvfb openbox tint2 x11vnc novnc websockify xdotool wmctrl imagemagick x11-xserver-utils \
-  xterm firefox-esr fonts-dejavu-core dbus-x11 procps
+  xvfb openbox tint2 x11vnc novnc websockify xdotool wmctrl scrot xclip x11-xserver-utils \
+  xterm chromium firefox-esr dbus-x11 procps \
+  fonts-dejavu-core fonts-noto-color-emoji
 systemctl enable --now qemu-guest-agent || true
 
 install -m 0755 "$HERE/rex-sessiond" /usr/local/bin/rex-sessiond
+install -m 0755 "$HERE/rex-browser" /usr/local/bin/rex-browser
 install -m 0644 "$HERE/rex-sessiond-boot.service" /etc/systemd/system/rex-sessiond-boot.service
 
 install -d -o rex -g rex -m 0755 /workspace /workspace/shared /workspace/bots

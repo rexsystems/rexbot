@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Chromium on Xvfb needs a few flags; bots should prefer this over raw chromium.
+set -euo pipefail
+exec chromium \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --disable-gpu \
+  --no-first-run \
+  --no-default-browser-check \
+  --password-store=basic \
+  "$@"
