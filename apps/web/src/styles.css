@@ -665,3 +665,29 @@ body {
 .image-viewer-image { width: 100%; height: auto; max-height: 70dvh; object-fit: contain; display: block; background: #090908; }
 .bubble-user:has(.attachment-gallery) { max-width: min(42rem, 94%); min-width: min(280px, 95%); }
 .chat-drop-hint { position: absolute; inset: 10px; z-index: 20; display: grid; place-items: center; text-align: center; padding: 24px; border: 2px dashed #f58b42; border-radius: 16px; background: rgba(17,16,14,.95); color: #f0ebe3; pointer-events: none; font-size: 1.2rem; }
+
+.auth-page {
+  min-height: 100%;
+  overflow-y: auto;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: #0c0b0a;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  background: #171614;
+}
+
+.account-button {
+  border-radius: 12px;
+  padding: 8px 10px;
+  margin-top: 4px;
+  transition: background 0.15s ease;
+}
+
+.account-button:hover,
+.account-button[data-expanded] {
+  background: #1c1b18;
+}

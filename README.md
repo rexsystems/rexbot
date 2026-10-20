@@ -33,7 +33,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open **[localhost:5173](http://localhost:5173)** for the product page, then **Open Rex** (or go to `/app`). In **Settings**, enter your model provider's API key, base URL, and model ID. The adapter uses the OpenAI-compatible Chat Completions interface. Defaults point to DeepSeek; choose a model that supports streaming and function tools.
+Open **[localhost:5173](http://localhost:5173)** for the product page, then **Open Rex** (or go to `/app`). The first visit asks you to create an account; the first account on a server is the admin and keeps any bots and chats that existed before accounts. Sign-up is closed after that until an admin opens it. In **Settings**, enter your model provider's API key, base URL, and model ID. The adapter uses the OpenAI-compatible Chat Completions interface. Defaults point to DeepSeek; choose a model that supports streaming and function tools.
 
 Create a bot with the **+** beside **Your bots**, then send it a message. Add a Tavily key in Settings if you want web search. The **+** beside **Groups** opens the group editor.
 
@@ -46,7 +46,7 @@ pnpm dev:api
 pnpm dev:web
 ```
 
-The API listens on **127.0.0.1:8787**. `.env.example` documents the available variables; it is not automatically loaded by the API. Export API variables in your shell. Vite variables belong in `apps/web/.env.local`.
+The API listens on **127.0.0.1:8787** (`REX_HOST` changes the address). `.env.example` documents the available variables; the API reads a `.env` at the repository root, and exported shell variables win. Vite variables belong in `apps/web/.env.local`.
 
 ## Google AI Studio: memory and live voice
 
@@ -167,7 +167,9 @@ Avatar meshes share **one WebGL renderer**. Animated visible characters follow t
 - Model keys are saved in browser local storage and sent to the local API when used. Chat text, selected memories, and tool results are sent to your configured model provider.
 - The Google key is sent to the local API for embeddings and ephemeral-token issuance; the live WebSocket uses only the short-lived token. Live settings stay in API memory for the session and any in-flight tool work. Google receives memory text for embeddings and microphone audio/context during voice calls.
 - Group history and private exchanges use the same configured provider. A private recipient receives its profile, the passed task, and up to six recent exchanges with that teammate in the shared group, rather than either bot's personal conversation history. Private exchanges are persisted locally and inspectable by the owner; "private" means outside the shared conversation, not hidden from the owner or model provider.
-- The API binds to loopback and restricts browser origins. It is a local, single-user application and is not configured for public network hosting.
+- Every account has its own bots, groups, chats, memory, uploads, and computer; the API checks ownership on every request. Passwords are stored as scrypt hashes, sessions as SHA-256 hashes of a random token in an HttpOnly cookie. Admins manage accounts but do not read other people's chats.
+- Bots' `http_fetch` refuses loopback, private, link-local, and metadata addresses, including after redirects (`REX_ALLOW_PRIVATE_FETCH=1` lifts this on a single-user machine).
+- The API binds to loopback and restricts browser origins. To host it for others, put it behind an HTTPS reverse proxy and set `REX_WEB_ORIGIN`.
 - Keys, user data, uploads, build outputs, and local agent configuration are excluded from the repository.
 
 ## Current scope
@@ -176,7 +178,7 @@ Rexbot provides local chat, customizable bots, groups, private collaboration, Go
 
 The text adapter preserves a provider's streamed `reasoning_content` through tool rounds and keeps model-scoped reasoning metadata for later turns. This supports [DeepSeek thinking-mode tool calls](https://api-docs.deepseek.com/guides/thinking_mode/). Metadata stays in local SQLite and is not part of visible chat messages or public conversation/private-exchange API responses. Reasoning from another provider/model is not forwarded. Speaker names are rendered by the interface; replies do not need to repeat `[Bot name]:` in their text.
 
-Scheduled/background conversations, multi-user authentication, and model vision are not implemented. Changes are welcome through GitHub issues and pull requests.
+Scheduled/background conversations and model vision are not implemented yet; see `PROGRESS.md` for the plan. Changes are welcome through GitHub issues and pull requests.
 
 ## License
 

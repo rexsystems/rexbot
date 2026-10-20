@@ -143,3 +143,52 @@ db.exec(`
 export function dataDirectory() {
   return dataDir;
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    user_agent TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+  CREATE TABLE IF NOT EXISTS usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    bot_id TEXT,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    tool_calls INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_usage_user ON usage_events(user_id, created_at);
+`);
+
+// Ownership: rows created before accounts existed have no user_id and are claimed by the first admin.
+for (const table of ["conversations", "memories", "uploads"]) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "user_id")) db.exec(`ALTER TABLE ${table} ADD COLUMN user_id TEXT`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_${table}_user ON ${table}(user_id)`);
+}
+
+/** Gives every unowned row (and the pre-account computer) to this user. Runs when the first admin is created. */
+export function claimLegacyData(userId: string) {
+  db.transaction(() => {
+    for (const table of ["conversations", "memories", "uploads"]) db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id IS NULL`).run(userId);
+    db.prepare("UPDATE vms SET owner_id = ? WHERE owner_id = 'local' AND NOT EXISTS (SELECT 1 FROM vms WHERE owner_id = ?)").run(userId, userId);
+  })();
+}

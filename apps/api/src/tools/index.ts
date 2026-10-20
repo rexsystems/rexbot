@@ -1,9 +1,10 @@
 import fs from "node:fs";
+import { safeGet } from "./safeFetch.js";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { isPreviewImage, type ClientSettings } from "@rex/shared";
 import { db } from "../db.js";
-import { computers, isDesktopComputer, LOCAL_OWNER } from "../computer.js";
+import { computers, isDesktopComputer, UnavailableComputer } from "../computer.js";
 import { isReaction, setReaction } from "../reactions.js";
 import type { MessagingContext } from "../botMessaging.js";
 
@@ -58,12 +59,12 @@ async function webSearch(
     .join("\n\n");
 }
 
-async function readUpload(uploadId: string): Promise<string> {
+async function readUpload(uploadId: string, ownerId: string | undefined): Promise<string> {
   const row = db
     .prepare(
-      `SELECT id, filename, mime_type, path, text_content FROM uploads WHERE id = ?`,
+      `SELECT id, filename, mime_type, path, text_content FROM uploads WHERE id = ? AND user_id = ?`,
     )
-    .get(uploadId) as
+    .get(uploadId, ownerId ?? "") as
     | {
         id: string;
         filename: string;
@@ -113,19 +114,9 @@ async function httpFetch(url: string): Promise<string> {
     return "Only http(s) URLs are allowed.";
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(parsed.toString(), {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: { "User-Agent": "RexAssistants/0.1" },
-    });
-    const buf = await res.arrayBuffer();
-    const slice = buf.byteLength > FETCH_MAX_BYTES
-      ? buf.slice(0, FETCH_MAX_BYTES)
-      : buf;
+    const res = await safeGet(parsed.toString(), { timeoutMs: FETCH_TIMEOUT_MS, maxBytes: FETCH_MAX_BYTES, headers: { "User-Agent": "RexAssistants/0.1" } });
+    const slice = res.body;
     const text = new TextDecoder("utf-8", { fatal: false }).decode(slice);
     const stripped = text
       .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -134,12 +125,10 @@ async function httpFetch(url: string): Promise<string> {
       .replace(/\s+/g, " ")
       .trim();
     return truncate(
-      `Status ${res.status} ${res.statusText}\nURL: ${parsed.toString()}\n\n${stripped || "(empty)"}`,
+      `Status ${res.status} ${res.statusText}\nURL: ${res.url}\n\n${stripped || "(empty)"}`,
     );
   } catch (err) {
     return `http_fetch failed: ${err instanceof Error ? err.message : String(err)}`;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -157,12 +146,12 @@ export async function runTool(
     return `Invalid tool arguments JSON for ${name}`;
   }
 
-  const computer = () => computers.forOwner(context?.ownerId ?? LOCAL_OWNER);
+  const computer = () => context?.ownerId ? computers.forOwner(context.ownerId) : new UnavailableComputer(computers.kind, "No account context for this computer.");
   switch (name) {
     case "message_bot": {
       if (!context?.botId || !context.budget) return "message_bot unavailable in this context.";
       const { messageBot } = await import("../botMessaging.js");
-      return messageBot(settings, { botId: context.botId, groupId: context.groupId, budget: context.budget }, args.bot_id, args.message);
+      return messageBot(settings, { ownerId: context.ownerId, botId: context.botId, groupId: context.groupId, budget: context.budget }, args.bot_id, args.message);
     }
     case "computer_exec": {
       try {
@@ -196,7 +185,7 @@ export async function runTool(
         Number(args.max_results ?? 5),
       );
     case "read_upload":
-      return readUpload(String(args.upload_id ?? ""));
+      return readUpload(String(args.upload_id ?? ""), context?.ownerId);
     case "http_fetch":
       return httpFetch(String(args.url ?? ""));
     default:

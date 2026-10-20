@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { asUser, TEST_USER } from "./helpers.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,7 +31,7 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     if (url.endsWith(":embedContent")) return Response.json({ embedding: { values: Array(768).fill(body.content.parts[0].text.includes("query:") ? .5 : 1) } });
     return Response.json({ name: "auth_tokens/test-token" });
   };
-  const post = (url: string, body: unknown) => voiceRoutes.request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const post = (url: string, body: unknown) => asUser(voiceRoutes).request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   let sessionId: string | undefined;
   try {
     assert.equal(await embedTexts({ ...settings, googleApiKey: "" }, ["Text"]), null);
@@ -39,11 +40,11 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     assert.equal(requests.filter((request) => request.url.endsWith(":embedContent")).length, 2);
     assert.equal(requests[0]!.body.model, "models/gemini-embedding-2");
     assert.equal(requests[0]!.body.outputDimensionality, 768);
-    db.prepare("INSERT INTO memories (id, content, embedding, embedding_space, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run("old", "An old preference", "[0.1,0.2]", "different-model", "2026-01-01", "2026-01-01");
-    const memories = await retrieveMemories(settings, "What matters?");
+    db.prepare("INSERT INTO memories (id, content, embedding, embedding_space, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)").run("old", "An old preference", "[0.1,0.2]", "different-model", "2026-01-01", "2026-01-01", TEST_USER.id);
+    const memories = await retrieveMemories(settings, TEST_USER.id, "What matters?");
     assert.equal(memories[0]?.id, "old");
     assert.equal((db.prepare("SELECT embedding_space FROM memories WHERE id = 'old'").get() as { embedding_space: string }).embedding_space, "google:gemini-embedding-2:768");
-    const bot = createConversation("Voice test", { ...DEFAULT_BOT, name: "Voice test" });
+    const bot = createConversation("Voice test", { ...DEFAULT_BOT, name: "Voice test" }, TEST_USER.id);
     assert.equal((await post("/voice", { conversationId: bot.id, settings: DEFAULT_SETTINGS })).status, 400);
     assert.equal((await post("/voice", { conversationId: "missing", settings })).status, 400);
     const started = await post("/voice", { conversationId: bot.id, settings });
@@ -73,7 +74,7 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     assert.equal(listMessages(bot.id).filter((message) => message.role === "user").length, 1);
     assert.deepEqual(listMessages(bot.id).map((message) => message.role), ["user", "tool", "assistant"]);
     assert.equal(listMessages(bot.id).find((message) => message.role === "assistant")?.botName, "Voice test");
-    await voiceRoutes.request(`/voice/${config.id}`, { method: "DELETE" });
+    await asUser(voiceRoutes).request(`/voice/${config.id}`, { method: "DELETE" });
     assert.equal(activeChats.has(bot.id), false);
     assert.equal((await post(`/voice/${config.id}/turn`, turn)).status, 410);
     rejectGoogle = true;
@@ -81,7 +82,7 @@ test("Google embeddings use separate keys and spaces; Live tokens, tools and tra
     assert.equal(activeChats.has(bot.id), false);
     assert.equal(await embedTexts(settings, ["Text"]), null);
   } finally {
-    if (sessionId) await voiceRoutes.request(`/voice/${sessionId}`, { method: "DELETE" });
+    if (sessionId) await asUser(voiceRoutes).request(`/voice/${sessionId}`, { method: "DELETE" });
     globalThis.fetch = fetchOriginal;
     db.close();
     rmSync(directory, { recursive: true, force: true });

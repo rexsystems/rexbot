@@ -24,9 +24,9 @@ export function selectGroupResponders(memberIds: string[], message: string, resp
   return mentioned ? [mentioned.bot] : members.slice(0, 1);
 }
 
-export function saveGroup(title: string, memberIds: string[], id?: string) {
+export function saveGroup(title: string, memberIds: string[], userId: string, id?: string) {
   return db.transaction(() => {
-    const group = id ? getConversation(id)! : createConversation(title);
+    const group = id ? getConversation(id)! : createConversation(title, undefined, userId);
     db.prepare("UPDATE conversations SET kind = 'group' WHERE id = ?").run(group.id);
     db.prepare("DELETE FROM group_members WHERE group_id = ?").run(group.id);
     const insert = db.prepare("INSERT INTO group_members (group_id, bot_id, position) VALUES (?, ?, ?)");

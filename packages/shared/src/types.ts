@@ -236,3 +236,23 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   maxBotsPerUser: 50,
   shareWorkspaceKeys: false,
 };
+
+export type UserRole = "admin" | "user";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  status: "active" | "disabled";
+  createdAt: string;
+  lastSeenAt: string | null;
+}
+
+export interface AuthState {
+  user: AuthUser | null;
+  /** No accounts exist yet: the next sign-up creates the admin. */
+  needsSetup: boolean;
+  signupOpen: boolean;
+  workspaceName: string;
+}

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { AppEnv } from "../auth.js";
 import {
   buildSystemPrompt,
   DEFAULT_SETTINGS,
@@ -14,6 +15,7 @@ import {
 import {
   createConversation,
   getConversation,
+  getOwnedConversation,
   insertMessage,
   listMessages,
   titleFromMessage,
@@ -36,7 +38,7 @@ import { messageUploads } from "../uploads.js";
 import { activeChats, peers, selectGroupResponders } from "../groups.js";
 import { messageReasoning, reasoningScope, responseReasoning } from "../reasoning.js";
 
-export const chatRoutes = new Hono();
+export const chatRoutes = new Hono<AppEnv>();
 
 function sse(event: SseEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -77,8 +79,9 @@ chatRoutes.post("/chat", async (c) => {
   const uploadIds = body?.uploadIds ?? [];
   if (!Array.isArray(uploadIds) || uploadIds.length > MAX_MESSAGE_ATTACHMENTS || uploadIds.some((id) => typeof id !== "string") || new Set(uploadIds).size !== uploadIds.length) return c.json({ error: "Invalid attachments (max 8 files per message)" }, 400);
   if (!message && !uploadIds.length) return c.json({ error: "A message or attachment is required" }, 400);
+  const userId = c.get("user").id;
   for (const id of uploadIds) {
-    const upload = db.prepare("SELECT message_id FROM uploads WHERE id = ?").get(id) as { message_id: string | null } | undefined;
+    const upload = db.prepare("SELECT message_id FROM uploads WHERE id = ? AND user_id = ?").get(id, userId) as { message_id: string | null } | undefined;
     if (!upload || upload.message_id) return c.json({ error: "An attachment is missing or already sent. Attach it again." }, 400);
   }
   const settings = normalizeSettings(body.settings);
@@ -87,12 +90,12 @@ chatRoutes.post("/chat", async (c) => {
   }
 
   let conversation = body.conversationId
-    ? getConversation(body.conversationId)
+    ? getOwnedConversation(body.conversationId, userId)
     : null;
   if (body.conversationId && !conversation) return c.json({ error: "Conversation not found" }, 404);
   const isNew = !conversation;
   if (!conversation) {
-    conversation = createConversation(titleFromMessage(message || "Image attachments"));
+    conversation = createConversation(titleFromMessage(message || "Image attachments"), undefined, userId);
   }
   if (activeChats.has(conversation.id)) return c.json({ error: "This conversation is already working. Wait for it to finish." }, 409);
   if (body.respondTo !== undefined && typeof body.respondTo !== "string") return c.json({ error: "Choose a valid responding bot." }, 400);
@@ -115,7 +118,7 @@ chatRoutes.post("/chat", async (c) => {
   }
 
   let memoryBlock: string;
-  try { memoryBlock = formatMemoryBlock(await retrieveMemories(settings, message)); }
+  try { memoryBlock = formatMemoryBlock(await retrieveMemories(settings, userId, message)); }
   catch (error) { activeChats.delete(conversation.id); throw error; }
 
   const encoder = new TextEncoder();
@@ -237,7 +240,7 @@ chatRoutes.post("/chat", async (c) => {
               call.function.name,
               call.function.arguments,
               settings,
-              { userMessageId: userMessage.id, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget },
+              { userMessageId: userMessage.id, ownerId: userId, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget },
             );
             if (call.function.name === "react_message") {
               try {
@@ -304,6 +307,7 @@ chatRoutes.post("/chat", async (c) => {
 
         void extractAndStoreMemories({
           settings,
+          userId,
           userMessage: message,
           assistantMessage: saved.content,
         });

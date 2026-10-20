@@ -16,12 +16,12 @@ function groupFields(id: string, kind: string): Pick<Conversation, "kind" | "mem
   return { kind: "group", memberIds: rows.map((row) => row.bot_id) };
 }
 
-export function listConversations(): Conversation[] {
+export function listConversations(userId: string): Conversation[] {
   const rows = db
     .prepare(
-      `SELECT id, title, created_at, updated_at, bot_profile, kind FROM conversations ORDER BY updated_at DESC`,
+      `SELECT id, title, created_at, updated_at, bot_profile, kind FROM conversations WHERE user_id = ? ORDER BY updated_at DESC`,
     )
-    .all() as Array<{
+    .all(userId) as Array<{
     id: string;
     title: string;
     created_at: string;
@@ -58,12 +58,26 @@ export function getConversation(id: string): Conversation | null {
   };
 }
 
-export function createConversation(title = "New chat", bot?: BotProfile): Conversation {
+/** The conversation, only if it belongs to this user. Route handlers use this; internals use getConversation. */
+export function getOwnedConversation(id: string, userId: string): Conversation | null {
+  const owner = db.prepare("SELECT user_id FROM conversations WHERE id = ?").get(id) as { user_id: string | null } | undefined;
+  return owner?.user_id === userId ? getConversation(id) : null;
+}
+
+export function conversationOwner(id: string): string | null {
+  return (db.prepare("SELECT user_id FROM conversations WHERE id = ?").get(id) as { user_id: string | null } | undefined)?.user_id ?? null;
+}
+
+export function countBots(userId: string): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM conversations WHERE user_id = ? AND kind != 'group' AND bot_profile IS NOT NULL").get(userId) as { n: number }).n;
+}
+
+export function createConversation(title: string, bot: BotProfile | undefined, userId: string): Conversation {
   const id = nanoid();
   const ts = nowIso();
   db.prepare(
-    `INSERT INTO conversations (id, title, created_at, updated_at, bot_profile) VALUES (?, ?, ?, ?, ?)`,
-  ).run(id, title, ts, ts, bot ? JSON.stringify(bot) : null);
+    `INSERT INTO conversations (id, title, created_at, updated_at, bot_profile, user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, title, ts, ts, bot ? JSON.stringify(bot) : null, userId);
   return { id, title, createdAt: ts, updatedAt: ts, bot };
 }
 

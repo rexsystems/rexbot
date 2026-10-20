@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { AppEnv } from "../auth.js";
 import fs from "node:fs";
 import path from "node:path";
 import { nanoid } from "nanoid";
@@ -7,7 +8,7 @@ import { isPreviewImage, MAX_UPLOAD_BYTES } from "@rex/shared";
 import { detectImage } from "../uploads.js";
 import { bodyLimit } from "hono/body-limit";
 
-export const uploadRoutes = new Hono();
+export const uploadRoutes = new Hono<AppEnv>();
 
 uploadRoutes.use("/uploads", bodyLimit({ maxSize: MAX_UPLOAD_BYTES + 128 * 1024, onError: (c) => c.json({ error: "File too large (max 8MB)" }, 413) }));
 
@@ -46,9 +47,9 @@ uploadRoutes.post("/uploads", async (c) => {
 
   const ts = nowIso();
   db.prepare(
-    `INSERT INTO uploads (id, conversation_id, filename, mime_type, size, path, text_content, created_at)
-     VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, filename, mimeType, ab.byteLength, dest, textContent, ts);
+    `INSERT INTO uploads (id, conversation_id, filename, mime_type, size, path, text_content, created_at, user_id)
+     VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, filename, mimeType, ab.byteLength, dest, textContent, ts, c.get("user").id);
 
   return c.json({
     id,
@@ -60,7 +61,7 @@ uploadRoutes.post("/uploads", async (c) => {
 });
 
 uploadRoutes.get("/uploads/:id/content", (c) => {
-  const upload = db.prepare("SELECT filename, mime_type, path FROM uploads WHERE id = ?").get(c.req.param("id")) as { filename: string; mime_type: string; path: string } | undefined;
+  const upload = db.prepare("SELECT filename, mime_type, path FROM uploads WHERE id = ? AND user_id = ?").get(c.req.param("id"), c.get("user").id) as { filename: string; mime_type: string; path: string } | undefined;
   if (!upload || !fs.existsSync(upload.path)) return c.json({ error: "Attachment not found" }, 404);
   const preview = isPreviewImage(upload.mime_type);
   return new Response(fs.readFileSync(upload.path), { headers: {
@@ -73,7 +74,7 @@ uploadRoutes.get("/uploads/:id/content", (c) => {
 
 uploadRoutes.delete("/uploads/:id", (c) => {
   const id = c.req.param("id");
-  const upload = db.prepare("SELECT path, message_id FROM uploads WHERE id = ?").get(id) as { path: string; message_id: string | null } | undefined;
+  const upload = db.prepare("SELECT path, message_id FROM uploads WHERE id = ? AND user_id = ?").get(id, c.get("user").id) as { path: string; message_id: string | null } | undefined;
   if (!upload) return c.json({ ok: true });
   if (upload.message_id) return c.json({ error: "Sent attachments cannot be removed from a draft" }, 409);
   fs.rmSync(upload.path, { force: true });

@@ -27,12 +27,12 @@ function keywordScore(query: string, content: string): number {
   return hits / q.length;
 }
 
-export function listMemories(): MemoryItem[] {
+export function listMemories(userId: string): MemoryItem[] {
   const rows = db
     .prepare(
-      `SELECT id, content, created_at, updated_at FROM memories ORDER BY updated_at DESC`,
+      `SELECT id, content, created_at, updated_at FROM memories WHERE user_id = ? ORDER BY updated_at DESC`,
     )
-    .all() as Array<{
+    .all(userId) as Array<{
     id: string;
     content: string;
     created_at: string;
@@ -46,20 +46,21 @@ export function listMemories(): MemoryItem[] {
   }));
 }
 
-export function deleteMemory(id: string) {
-  db.prepare(`DELETE FROM memories WHERE id = ?`).run(id);
+export function deleteMemory(id: string, userId: string) {
+  db.prepare(`DELETE FROM memories WHERE id = ? AND user_id = ?`).run(id, userId);
 }
 
 export async function retrieveMemories(
   settings: ClientSettings,
+  userId: string,
   query: string,
   limit = 8,
 ): Promise<MemoryItem[]> {
   const rows = db
     .prepare(
-      `SELECT id, content, embedding, embedding_space, created_at, updated_at FROM memories`,
+      `SELECT id, content, embedding, embedding_space, created_at, updated_at FROM memories WHERE user_id = ?`,
     )
-    .all() as Array<{
+    .all(userId) as Array<{
     id: string;
     content: string;
     embedding: string | null;
@@ -113,6 +114,7 @@ export function formatMemoryBlock(items: MemoryItem[]): string {
 
 export async function upsertMemory(
   settings: ClientSettings,
+  userId: string,
   content: string,
 ): Promise<MemoryItem> {
   const trimmed = content.trim();
@@ -120,18 +122,19 @@ export async function upsertMemory(
   const ts = nowIso();
   const emb = (await embedTexts(settings, [trimmed]))?.[0] ?? null;
   db.prepare(
-    `INSERT INTO memories (id, content, embedding, created_at, updated_at, embedding_space)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(id, trimmed, emb ? JSON.stringify(emb) : null, ts, ts, emb ? embeddingSpace(settings) : null);
+    `INSERT INTO memories (id, content, embedding, created_at, updated_at, embedding_space, user_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, trimmed, emb ? JSON.stringify(emb) : null, ts, ts, emb ? embeddingSpace(settings) : null, userId);
   return { id, content: trimmed, createdAt: ts, updatedAt: ts };
 }
 
 export async function extractAndStoreMemories(opts: {
   settings: ClientSettings;
+  userId: string;
   userMessage: string;
   assistantMessage: string;
 }): Promise<void> {
-  const { settings, userMessage, assistantMessage } = opts;
+  const { settings, userId, userMessage, assistantMessage } = opts;
   if (!settings.llmApiKey.trim()) return;
 
   try {
@@ -147,7 +150,7 @@ Examples: preferences, name, projects, constraints. Skip ephemeral task details.
     const facts = JSON.parse(match[0]) as unknown;
     if (!Array.isArray(facts)) return;
 
-    const existing = listMemories().map((m) => m.content.toLowerCase());
+    const existing = listMemories(userId).map((m) => m.content.toLowerCase());
     for (const fact of facts) {
       if (typeof fact !== "string") continue;
       const t = fact.trim();
@@ -155,7 +158,7 @@ Examples: preferences, name, projects, constraints. Skip ephemeral task details.
       if (existing.some((e) => e.includes(t.toLowerCase()) || t.toLowerCase().includes(e))) {
         continue;
       }
-      await upsertMemory(settings, t);
+      await upsertMemory(settings, userId, t);
       existing.push(t.toLowerCase());
     }
   } catch {

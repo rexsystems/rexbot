@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { asUser, TEST_USER } from "./helpers.js";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -16,9 +17,9 @@ test("thinking tools replay streamed reasoning in public/private rounds and late
   const { messageBot } = await import("../src/botMessaging.js");
   const { saveGroup, listExchanges } = await import("../src/groups.js");
   const { messageReasoning } = await import("../src/reasoning.js");
-  const bix = createConversation("Bix", { ...DEFAULT_BOT, name: "Bix" });
-  const puck = createConversation("Puck", { ...DEFAULT_BOT, name: "Puck" });
-  const group = saveGroup("Team", [bix.id, puck.id]);
+  const bix = createConversation("Bix", { ...DEFAULT_BOT, name: "Bix" }, TEST_USER.id);
+  const puck = createConversation("Puck", { ...DEFAULT_BOT, name: "Puck" }, TEST_USER.id);
+  const group = saveGroup("Team", [bix.id, puck.id], TEST_USER.id);
   insertMessage({ conversationId: bix.id, role: "assistant", content: "[Bix]: Legacy visible answer.", botId: bix.id, botName: "Bix" });
   const expectedCalls = new Map<string, string>();
   let count = 0;
@@ -52,7 +53,7 @@ test("thinking tools replay streamed reasoning in public/private rounds and late
   const settings = { ...DEFAULT_SETTINGS, llmApiKey: "test-only-key", llmBaseUrl: `http://127.0.0.1:${(model.address() as AddressInfo).port}`, llmModel: "deepseek-flash" };
   try {
     for (let turn = 0; turn < 2; turn++) {
-      const response = await chatRoutes.request("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: bix.id, message: "Do work", settings }) });
+      const response = await asUser(chatRoutes).request("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: bix.id, message: "Do work", settings }) });
       const events = (await response.text()).split("\n\n").filter(Boolean).map((line) => JSON.parse(line.slice(6)) as SseEvent);
       assert.ok(!events.some((event) => event.type === "error"), JSON.stringify(events));
       assert.equal(events.filter((event) => event.type === "delta").map((event) => event.text).join(""), "Checking 0.Checking 1.Done.");
@@ -63,7 +64,7 @@ test("thinking tools replay streamed reasoning in public/private rounds and late
       assert.ok(!JSON.stringify(listMessages(bix.id)).includes("thought"));
     }
     for (let turn = 0; turn < 2; turn++) {
-      const result = JSON.parse(await messageBot(settings, { botId: bix.id, groupId: group.id, budget: { remaining: 6 } }, puck.id, "Do work"));
+      const result = JSON.parse(await messageBot(settings, { ownerId: TEST_USER.id, botId: bix.id, groupId: group.id, budget: { remaining: 6 } }, puck.id, "Do work"));
       assert.equal(result.reply, "Done.");
       assert.ok(!JSON.stringify(listExchanges(group.id)).includes("thought"));
     }

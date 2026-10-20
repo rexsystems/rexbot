@@ -6,9 +6,10 @@ import path from "node:path";
 const dataDir = mkdtempSync(path.join(tmpdir(), "rex-ui-test-"));
 export default defineConfig({
   testDir: "./test",
+  globalSetup: "./test/global-setup.ts",
   workers: 1,
   timeout: 60_000,
-  use: { baseURL: "http://127.0.0.1:15173", screenshot: "only-on-failure", trace: "retain-on-failure", launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] } },
+  use: { baseURL: "http://127.0.0.1:15173", storageState: "test-results/.auth/admin.json", screenshot: "only-on-failure", trace: "retain-on-failure", launchOptions: { args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"] } },
   webServer: [
     {
       command: "pnpm --filter api exec tsx src/index.ts",

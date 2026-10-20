@@ -17,6 +17,8 @@ import {
   Title,
   Tooltip,
   UnstyledButton,
+  Avatar,
+  Menu,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
@@ -38,6 +40,9 @@ import {
   IconChevronDown,
   IconMic,
   IconLink,
+  IconAccount,
+  IconAdmin,
+  IconLogout,
 } from "./icons";
 import type {
   ChatMessage,
@@ -55,6 +60,8 @@ import {
 } from "./MarkdownMessage";
 import { loadSettings, saveSettings } from "./settings";
 import { SettingsModal } from "./SettingsModal";
+import { AccountModal } from "./AccountModal";
+import { useSession } from "./session";
 import { ComputerPanel } from "./ComputerPanel";
 import { MessageReactions } from "./MessageReactions";
 import { BotEditor } from "./BotEditor";
@@ -79,6 +86,11 @@ type ThreadItem =
       status: "running" | "done" | "error";
       detail?: string;
     };
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1]![0] : "")).toUpperCase() || "?";
+}
 
 function uid() {
   return Math.random().toString(36).slice(2);
@@ -116,6 +128,8 @@ const toolLabels: Record<string, string> = { computer_exec: "Rex Computer", comp
 export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const session = useSession();
   const [showComputer, setShowComputer] = useState(false);
   const [computerHasDesktop, setComputerHasDesktop] = useState(false);
   const [computerFocus, setComputerFocus] = useState<string | undefined>();
@@ -577,6 +591,25 @@ export function App() {
             {busy ? <Group gap="xs" px="sm"><OrbitDots active /><Text size="sm" c="dimmed">Rex is working</Text></Group> : null}
             <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconBrain />} onClick={() => { setShowMemory(true); setMobileNav(false); }}><Group gap="xs"><span>Memory</span><Text span size="xs" c="dimmed">{memories.length}</Text></Group></Button>
             <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconSettings />} onClick={() => { setShowSettings(true); setMobileNav(false); }}>Settings</Button>
+            <Menu position="top-start" width={240} withinPortal>
+              <Menu.Target>
+                <UnstyledButton className="account-button" aria-label="Account menu">
+                  <Group gap="sm" wrap="nowrap">
+                    <Avatar radius="xl" size={32} color="orange">{initials(session.user.name)}</Avatar>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <Text size="sm" fw={500} truncate>{session.user.name}</Text>
+                      <Text size="xs" c="dimmed" truncate>{session.user.email}</Text>
+                    </div>
+                  </Group>
+                </UnstyledButton>
+              </Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item leftSection={<IconAccount size={18} />} onClick={() => { setShowAccount(true); setMobileNav(false); }}>Account</Menu.Item>
+                {session.user.role === "admin" ? <Menu.Item leftSection={<IconAdmin size={18} />} component="a" href="/admin" onClick={(event) => { event.preventDefault(); syncUrl("/admin"); window.dispatchEvent(new PopStateEvent("popstate")); }}>Admin panel</Menu.Item> : null}
+                <Menu.Divider />
+                <Menu.Item leftSection={<IconLogout size={18} />} onClick={() => void session.signOut()}>Sign out</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
           </Stack>
         </AppShell.Navbar>
 
@@ -936,6 +969,7 @@ export function App() {
           newChat();
         }).catch((err) => setError(String(err)));
       }} /> : null}
+      {showAccount ? <AccountModal onClose={() => setShowAccount(false)} /> : null}
       {showSettings ? (
         <SettingsModal
           initial={settings}

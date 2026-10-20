@@ -399,6 +399,3 @@ export class ComputerFleet {
 }
 
 export const computers = new ComputerFleet();
-
-/** Owner id used until accounts exist; Phase 2 replaces it with the signed-in user's id. */
-export const LOCAL_OWNER = "local";

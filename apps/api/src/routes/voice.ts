@@ -1,15 +1,16 @@
 import { Hono } from "hono";
+import type { AppEnv } from "../auth.js";
 import { nanoid } from "nanoid";
 import { buildSystemPrompt, DEFAULT_SETTINGS, END_CALL_TOOL, toolDefinitions, type ClientSettings, type VoiceSessionConfig } from "@rex/shared";
 import { computers } from "../computer.js";
-import { getConversation, insertMessage, listMessages } from "../conversations.js";
+import { getConversation, getOwnedConversation, insertMessage, listMessages } from "../conversations.js";
 import { activeChats, peers } from "../groups.js";
 import { runTool } from "../tools/index.js";
 import { db } from "../db.js";
 import { formatMemoryBlock, listMemories } from "../memory/store.js";
 
 interface Session {
-  conversationId: string; settings: ClientSettings; expires: number;
+  conversationId: string; userId: string; settings: ClientSettings; expires: number;
   tools: Set<string>; remaining: number; budget: { remaining: number }; turns: Set<string>;
   timer: ReturnType<typeof setTimeout>;
   pendingTools: Array<{ name: string; output: string }>;
@@ -32,17 +33,19 @@ function closeSession(id: string) {
   activeChats.delete(session.conversationId);
   sessions.delete(id);
 }
-function sessionFor(id: string) {
+function sessionFor(id: string, userId: string) {
   const session = sessions.get(id);
+  if (session && session.userId !== userId) return undefined;
   if (!session || session.closing || session.expires < Date.now()) { closeSession(id); return undefined; }
   return session;
 }
 
-export const voiceRoutes = new Hono();
+export const voiceRoutes = new Hono<AppEnv>();
 voiceRoutes.post("/voice", async (c) => {
   let body: { conversationId?: string; settings?: Partial<ClientSettings> };
   try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
-  const bot = typeof body?.conversationId === "string" ? getConversation(body.conversationId) : null;
+  const userId = c.get("user").id;
+  const bot = typeof body?.conversationId === "string" ? getOwnedConversation(body.conversationId, userId) : null;
   if (!bot?.bot || bot.kind) return c.json({ error: "Choose an individual bot for live voice." }, 400);
   const settings = { ...DEFAULT_SETTINGS, ...body.settings };
   const key = typeof settings.googleApiKey === "string" ? settings.googleApiKey.trim() : "";
@@ -69,7 +72,7 @@ voiceRoutes.post("/voice", async (c) => {
     },
     inputAudioTranscription: {}, outputAudioTranscription: {},
     ...(history.length ? { historyConfig: { initialHistoryInClientContent: true } } : {}),
-    systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories().slice(0, 8)), bot.bot, { desktop: computers.desktop })}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. If the user asks to hang up, end the call, stop the call, or clearly says goodbye to close it, or you decide the call should end, say a brief goodbye if natural and then call end_call so the client disconnects. Do not claim a tool action succeeded until its result is returned.` }] },
+    systemInstruction: { parts: [{ text: `${buildSystemPrompt(formatMemoryBlock(listMemories(userId).slice(0, 8)), bot.bot, { desktop: computers.desktop })}\nThis is a live voice conversation. Speak naturally and concisely. Only use the tools actually provided in this session. Available teammates: ${JSON.stringify(roster)}. If the user asks to hang up, end the call, stop the call, or clearly says goodbye to close it, or you decide the call should end, say a brief goodbye if natural and then call end_call so the client disconnects. Do not claim a tool action succeeded until its result is returned.` }] },
     tools: [{ functionDeclarations: definitions.map(({ name, description, parameters }) => ({ name, description, parameters })) }],
   };
   try {
@@ -86,7 +89,7 @@ voiceRoutes.post("/voice", async (c) => {
     const id = nanoid();
     const timer = setTimeout(() => closeSession(id), 10 * 60_000);
     timer.unref();
-    sessions.set(id, { conversationId: bot.id, settings, expires, tools: new Set(definitions.map((tool) => tool.name)), remaining: 24, budget: { remaining: 6 }, turns: new Set(), timer, pendingTools: [], closing: false, activeTools: 0 });
+    sessions.set(id, { conversationId: bot.id, userId, settings, expires, tools: new Set(definitions.map((tool) => tool.name)), remaining: 24, budget: { remaining: 6 }, turns: new Set(), timer, pendingTools: [], closing: false, activeTools: 0 });
     const config: VoiceSessionConfig = { id, url: `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token.name)}`, setup, history };
     return c.json(config);
   } catch (error) {
@@ -96,7 +99,7 @@ voiceRoutes.post("/voice", async (c) => {
 });
 
 voiceRoutes.post("/voice/:id/tool", async (c) => {
-  const session = sessionFor(c.req.param("id"));
+  const session = sessionFor(c.req.param("id"), c.get("user").id);
   if (!session) return c.json({ error: "Voice session ended. Start a new call." }, 410);
   let body: { name?: string; args?: unknown };
   try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
@@ -112,7 +115,7 @@ voiceRoutes.post("/voice/:id/tool", async (c) => {
   session.activeTools++;
   try {
     let output: string;
-    try { output = await runTool(body.name!, JSON.stringify(body.args ?? {}), session.settings, { userMessageId: "", botId: session.conversationId, budget: session.budget }); }
+    try { output = await runTool(body.name!, JSON.stringify(body.args ?? {}), session.settings, { userMessageId: "", ownerId: session.userId, botId: session.conversationId, budget: session.budget }); }
     catch (error) { output = `Tool failed: ${error instanceof Error ? error.message : String(error)}`; }
     session.pendingTools.push({ name: body.name!, output });
     return c.json({ output });
@@ -120,7 +123,7 @@ voiceRoutes.post("/voice/:id/tool", async (c) => {
 });
 
 voiceRoutes.post("/voice/:id/turn", async (c) => {
-  const session = sessionFor(c.req.param("id"));
+  const session = sessionFor(c.req.param("id"), c.get("user").id);
   if (!session) return c.json({ error: "Voice session ended." }, 410);
   let body: { id?: string; user?: string; assistant?: string };
   try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
@@ -135,4 +138,4 @@ voiceRoutes.post("/voice/:id/turn", async (c) => {
   session.turns.add(body.id);
   return c.json({ ok: true });
 });
-voiceRoutes.delete("/voice/:id", (c) => { closeSession(c.req.param("id")); return c.json({ ok: true }); });
+voiceRoutes.delete("/voice/:id", (c) => { if (sessions.get(c.req.param("id"))?.userId === c.get("user").id) closeSession(c.req.param("id")); return c.json({ ok: true }); });

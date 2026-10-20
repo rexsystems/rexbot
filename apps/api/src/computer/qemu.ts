@@ -63,11 +63,19 @@ function which(binary: string): string | null {
   return result.status === 0 ? result.stdout.trim() || null : null;
 }
 
-export function run(command: string, args: string[], options: { timeoutMs?: number; input?: string } = {}): Promise<{ code: number; output: string }> {
+export function run(command: string, args: string[], options: { timeoutMs?: number; input?: string; onLine?: (line: string) => void } = {}): Promise<{ code: number; output: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
     let output = "";
-    const collect = (chunk: Buffer) => { output = (output + chunk.toString()).slice(-100_000); };
+    let partial = "";
+    const collect = (chunk: Buffer) => {
+      const text = chunk.toString();
+      output = (output + text).slice(-100_000);
+      if (!options.onLine) return;
+      const lines = (partial + text).split(/\r?\n/);
+      partial = lines.pop() ?? "";
+      for (const line of lines) if (line.trim()) options.onLine(line.trim().slice(0, 300));
+    };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
     const timer = setTimeout(() => child.kill("SIGKILL"), options.timeoutMs ?? 120_000);
@@ -470,8 +478,12 @@ export async function buildTemplate(host: QemuHost, options: TemplateBuildOption
     const copy = await run("scp", scpArgs);
     if (copy.code !== 0) throw new Error(`scp failed: ${copy.output}`);
     log("Installing the desktop (Xvfb, Openbox, noVNC, Chromium…). This takes several minutes…");
-    const setup = await run("ssh", [...ssh, target, "--", "sudo bash /tmp/rex-setup/guest-setup.sh"], { timeoutMs: 3_600_000 });
-    for (const line of setup.output.split("\n").slice(-6)) log(line);
+    // apt prints a line per package; "Setting up" and our own messages are the useful progress markers.
+    const setup = await run("ssh", [...ssh, target, "--", "sudo bash /tmp/rex-setup/guest-setup.sh"], {
+      timeoutMs: 3_600_000,
+      onLine: (line) => { if (/^(Setting up|E:|rex-sessiond|Err:|W: )/.test(line)) log(line); },
+    });
+    if (setup.code !== 0) for (const line of setup.output.split("\n").slice(-12)) log(line);
     if (setup.code !== 0) throw new Error(`Guest setup failed (exit ${setup.code}).`);
     log("Cleaning machine identity so each user VM boots as a new machine…");
     await run("ssh", [...ssh, target, "--", "sudo cloud-init clean --logs --machine-id && sudo rm -f /etc/ssh/ssh_host_* && sudo rm -rf /tmp/rex-setup && sudo fstrim -av || true"], { timeoutMs: 120_000 });

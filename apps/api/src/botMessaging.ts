@@ -7,6 +7,7 @@ import { computers } from "./computer.js";
 import { exchangeReasoning, reasoningScope, responseReasoning } from "./reasoning.js";
 
 export interface MessagingContext {
+  ownerId?: string;
   botId?: string;
   groupId?: string;
   budget: { remaining: number };
@@ -51,7 +52,7 @@ export async function messageBot(settings: ClientSettings, context: MessagingCon
       const toolCalls = [...calls.values()].slice(0, 4).map((call, index) => ({ ...call, id: call.id || `private_${round}_${index}` }));
       messages.push({ role: "assistant", content: content || null, tool_calls: toolCalls, ...responseReasoning(reasoning, settings) });
       for (const call of toolCalls) {
-        const output = ["message_bot", "react_message"].includes(call.function.name) ? "This tool is unavailable in private replies." : await runTool(call.function.name, call.function.arguments, settings, { userMessageId: "", botId: to.id });
+        const output = ["message_bot", "react_message"].includes(call.function.name) ? "This tool is unavailable in private replies." : await runTool(call.function.name, call.function.arguments, settings, { userMessageId: "", ownerId: context.ownerId, botId: to.id });
         messages.push({ role: "tool", content: output, tool_call_id: call.id });
       }
     }

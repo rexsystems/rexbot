@@ -1,46 +1,51 @@
-import { Hono } from "hono";
-import { computers, isDesktopComputer, LOCAL_OWNER } from "../computer.js";
+import { Hono, type Context } from "hono";
+import { requireAdmin, type AppEnv } from "../auth.js";
+import { computers, isDesktopComputer } from "../computer.js";
 import { proxyVncHttp } from "../computer/vncProxy.js";
-import { getConversation } from "../conversations.js";
+import { getOwnedConversation } from "../conversations.js";
 
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
 }
 
-function knownBot(id: string) {
-  const conversation = getConversation(id);
+type Ctx = Context<AppEnv>;
+
+function knownBot(c: Ctx, id: string) {
+  const conversation = getOwnedConversation(id, c.get("user").id);
   return Boolean(conversation?.bot && !conversation.kind);
 }
 
-const ownerComputer = () => computers.forOwner(LOCAL_OWNER);
+const ownerComputer = (c: Ctx) => computers.forOwner(c.get("user").id);
 
-export const computerRoutes = new Hono();
-computerRoutes.get("/computer", async (c) => c.json(await ownerComputer().status()));
+/** noVNC pages authenticate with their unguessable view token, so iframes work without cookies. */
+export const computerViewRoutes = new Hono();
+computerViewRoutes.get("/computer/vnc/:token/*", (c) => proxyVncHttp(c.req.raw, (token) => computers.resolveView(token)));
 
-computerRoutes.get("/computer/vnc/:token/*", (c) => proxyVncHttp(c.req.raw, (token) => computers.resolveView(token)));
+export const computerRoutes = new Hono<AppEnv>();
+computerRoutes.get("/computer", async (c) => c.json(await ownerComputer(c).status()));
 
 computerRoutes.get("/computer/session/:botId", async (c) => {
-  const computer = ownerComputer();
+  const computer = ownerComputer(c);
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
   const botId = c.req.param("botId");
-  if (!knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
+  if (!knownBot(c, botId)) return c.json({ error: "Bot not found." }, 404);
   try { return c.json(await computer.session(botId)); }
   catch (err) { return c.json({ error: errorMessage(err) }, 502); }
 });
 
 computerRoutes.get("/computer/session/:botId/state", (c) => {
-  const computer = ownerComputer();
+  const computer = ownerComputer(c);
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
   const botId = c.req.param("botId");
-  if (!knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
+  if (!knownBot(c, botId)) return c.json({ error: "Bot not found." }, 404);
   return c.json(computer.sessionState(botId));
 });
 
 computerRoutes.post("/computer/session/:botId/:action", async (c) => {
-  const computer = ownerComputer();
+  const computer = ownerComputer(c);
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
   const botId = c.req.param("botId");
-  if (!knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
+  if (!knownBot(c, botId)) return c.json({ error: "Bot not found." }, 404);
   const action = c.req.param("action");
   try {
     if (action === "lock") return c.json(await computer.lock(botId));
@@ -50,7 +55,7 @@ computerRoutes.post("/computer/session/:botId/:action", async (c) => {
 });
 
 computerRoutes.post("/computer/:action", async (c) => {
-  const computer = ownerComputer();
+  const computer = ownerComputer(c);
   try {
     const action = c.req.param("action");
     if (action === "start") return c.json(await computer.start());
@@ -58,7 +63,7 @@ computerRoutes.post("/computer/:action", async (c) => {
     if (action === "exec") {
       const body = await c.req.json() as { command?: unknown; botId?: unknown };
       const botId = typeof body.botId === "string" && body.botId ? body.botId : undefined;
-      if (botId && !knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
+      if (botId && !knownBot(c, botId)) return c.json({ error: "Bot not found." }, 404);
       return c.json(await computer.execute(body.command as string, botId));
     }
     return c.json({ error: "Unknown computer action" }, 404);
@@ -67,6 +72,6 @@ computerRoutes.post("/computer/:action", async (c) => {
   }
 });
 
-/** Image build controls. Admin-only once accounts exist. */
+/** Image build state. Everyone may read it (the panel shows progress); only admins may start a build. */
 computerRoutes.get("/computer/template", (c) => c.json(computers.templateInfo()));
-computerRoutes.post("/computer/template/build", (c) => c.json(computers.buildTemplate()));
+computerRoutes.post("/computer/template/build", requireAdmin, (c) => c.json(computers.buildTemplate()));

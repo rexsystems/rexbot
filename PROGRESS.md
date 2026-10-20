@@ -22,7 +22,7 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [x] One VM per user (like a personal box): qcow2 overlay on a shared, provisioned template image,
       cloud-init NoCloud seed ISO (cloud-localds / genisoimage / xorriso), user-mode networking with
       SSH forwarded to a loopback port.
-- [x] Template builder: download Debian 12 cloud image, boot once, run the guest setup (Xvfb, Openbox,
+- [x] Template builder: download the Debian 13 cloud image, boot once, run the guest setup (Xvfb, Openbox,
       noVNC, Chromium...), clean cloud-init, store `template-vN.qcow2`.
 - [x] Reuse the per-bot screen logic (`rex-sessiond`, noVNC proxy, locks, input, screenshots) through a
       generic `DesktopComputer` that talks to any VM power driver.
@@ -32,14 +32,17 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [ ] End-to-end check on a real host: image build + per-user VM boot + screen (running, see below).
 
 ### Phase 2: Accounts
-- [ ] `users`, `sessions`, `app_settings` tables; scrypt password hashes; HttpOnly session cookie
-      (Bearer token also accepted for the desktop shell).
-- [ ] Sign in / sign up screens in the current style. First account becomes admin. Admin can turn
-      sign-up on/off (and choose invite-only).
-- [ ] Every conversation, bot, group, memory, upload, and computer is scoped to its owner.
-      Existing single-user data is assigned to the first admin.
-- [ ] `http_fetch` must refuse private/loopback addresses once the API is multi-user (SSRF).
-- [ ] Optional `REX_HOST` binding and serving the built web app from the API for a single-origin deploy.
+- [x] `users`, `sessions`, `app_settings` tables; scrypt password hashes; HttpOnly session cookie
+      (Bearer token also accepted, used by the desktop shell whose webview is a different site).
+- [x] Sign in / sign up screens in the current style, account menu (name, password, sign out). First account
+      becomes admin. Sign-up is closed by default; admin opens it (UI in Phase 3, setting `signupMode`).
+- [x] Every conversation, bot, group, memory, upload, and computer is scoped to its owner (404 for others,
+      admins included). Existing single-user data is assigned to the first admin.
+- [x] `http_fetch` refuses private/loopback/metadata addresses, re-checked on each redirect and pinned at DNS
+      lookup (no rebinding). `REX_ALLOW_PRIVATE_FETCH=1` lifts it on a single-user box.
+- [x] `REX_HOST` binding. API app split into `app.ts` (testable) and `index.ts` (server).
+- [ ] Serve the built web app from the API for a single-origin deploy (`VITE_API_URL=same-origin` is ready).
+- [ ] Invite-only sign-up mode (admin-created accounts work through the admin panel).
 
 ### Phase 3: Admin panel (`/admin`)
 - [ ] Overview: users, bots, messages, running VMs (real counts from the database).
@@ -73,18 +76,27 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 
 - Phase 1 code: `ComputerFleet` (apps/api/src/computer.ts) hands each owner a computer; `DesktopComputer`
   (computer/desktop.ts) is the old per-bot screen logic over a generic `VmPower`; `QemuMachine`/`QemuHost`
-  (computer/qemu.ts) run QEMU, QMP, cloud-init seeds and the template build. Until accounts exist, every request
-  uses the owner id `LOCAL_OWNER = "local"`.
+  (computer/qemu.ts) run QEMU, QMP, cloud-init seeds and the template build.
+- Phase 2: `auth.ts` + `routes/auth.ts` (API), `AuthScreen.tsx`, `AccountModal.tsx`, `session.tsx`, `Root.tsx` (web).
+  Tests: `test/auth.test.ts` (first admin, closed sign-up, isolation, logout), `test/safeFetch.test.ts`.
+  Playwright signs in once in `test/global-setup.ts`.
 
 ## In progress
 
-- Phase 1 verification: building the template on the dev box. Note: on this box nested KVM hangs, so it was
-  tested with `REX_QEMU_ACCEL=tcg`.
+- Phase 1 verification: building the template on the dev box. Nested KVM hangs on this box, so it uses
+  `REX_QEMU_ACCEL=tcg` (slow: the desktop package install takes a long time under emulation).
+
+## Known gaps
+
+- Model keys still live in browser local storage, so two accounts on one browser share them. Phase 4 moves
+  them server-side per account.
+- In the desktop app, `<img>` previews of uploads can't send the Bearer token; previews need a signed URL (todo).
+- Playwright tests that need the Podman computer fail on hosts without Podman (they did before accounts too).
 
 ## Where I stopped
 
-QEMU backend committed. Next: finish the end-to-end VM check, then Phase 2 (accounts): users/sessions tables,
-auth middleware, replace `LOCAL_OWNER` with the signed-in user id everywhere.
+Phase 2 (accounts) committed. Next: Phase 3 admin panel: `/admin/*` API routes behind `requireAdmin`, then the
+`/admin` page (overview, users, computers, usage, settings) in the existing style.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

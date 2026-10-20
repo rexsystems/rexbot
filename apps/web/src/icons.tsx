@@ -5,7 +5,8 @@ import {
   MessageAdd01Icon, Search01Icon, SentIcon, Settings01Icon,
   PlayIcon, StopIcon, ArrowReloadHorizontalIcon, Brain01Icon,
   SmileIcon, CustomizeIcon, PanelRightCloseIcon, UserAdd01Icon, UserGroupIcon, ArrowDown01Icon, Mic01Icon,
-  Link01Icon,
+  Link01Icon, Logout01Icon, ShieldUserIcon, UserCircleIcon, DashboardSquare01Icon, ChartLineData01Icon,
+  ServerStack01Icon, UserMultipleIcon, Robot01Icon, ArrowLeft01Icon, PowerIcon, Clock01Icon, BookOpen01Icon, Plug01Icon,
 } from "@hugeicons/core-free-icons";
 
 function glyph(icon: typeof Add01Icon) {
@@ -40,3 +41,16 @@ export const IconGroup = glyph(UserGroupIcon);
 export const IconChevronDown = glyph(ArrowDown01Icon);
 export const IconMic = glyph(Mic01Icon);
 export const IconLink = glyph(Link01Icon);
+export const IconLogout = glyph(Logout01Icon);
+export const IconAdmin = glyph(ShieldUserIcon);
+export const IconAccount = glyph(UserCircleIcon);
+export const IconDashboard = glyph(DashboardSquare01Icon);
+export const IconUsage = glyph(ChartLineData01Icon);
+export const IconServers = glyph(ServerStack01Icon);
+export const IconUsers = glyph(UserMultipleIcon);
+export const IconRobot = glyph(Robot01Icon);
+export const IconBack = glyph(ArrowLeft01Icon);
+export const IconPower = glyph(PowerIcon);
+export const IconClock = glyph(Clock01Icon);
+export const IconBook = glyph(BookOpen01Icon);
+export const IconPlug = glyph(Plug01Icon);

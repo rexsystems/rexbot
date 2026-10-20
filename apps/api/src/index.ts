@@ -1,94 +1,13 @@
 import "./env.js";
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import "./db.js";
-import {
-  deleteConversation,
-  getConversation,
-  listConversations,
-  listMessages,
-} from "./conversations.js";
-import { deleteMemory, listMemories } from "./memory/store.js";
-import { chatRoutes } from "./routes/chat.js";
-import { uploadRoutes } from "./routes/uploads.js";
-import { computerRoutes } from "./routes/computer.js";
-import { db } from "./db.js";
-import { isReaction, setReaction } from "./reactions.js";
-import { botRoutes } from "./routes/bots.js";
-import { groupRoutes } from "./routes/groups.js";
-import { activeChats } from "./groups.js";
-import { voiceRoutes } from "./routes/voice.js";
 import type { Server } from "node:http";
+import { allowedOrigins, app } from "./app.js";
 import { computers } from "./computer.js";
 import { attachVncProxy } from "./computer/vncProxy.js";
 
-const app = new Hono();
 const port = Number(process.env.PORT || 8787);
-// The API's own origins load the noVNC page shown inside the computer panel.
-const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost", "http://tauri.localhost", `http://localhost:${port}`, `http://127.0.0.1:${port}`, ...(process.env.REX_WEB_ORIGIN ? [process.env.REX_WEB_ORIGIN] : [])];
-
-app.use("*", async (c, next) => {
-  const origin = c.req.header("Origin");
-  if (origin && !allowedOrigins.includes(origin)) return c.json({ error: "Origin not allowed" }, 403);
-  if (c.req.method === "POST" && !c.req.header("Content-Type")?.startsWith("application/json") && !c.req.path.startsWith("/uploads")) {
-    return c.json({ error: "application/json required" }, 415);
-  }
-  await next();
-});
-
-app.use(
-  "*",
-  cors({
-    origin: allowedOrigins,
-    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type"],
-  }),
-);
-
-app.get("/health", (c) => c.json({ ok: true, name: "rex-api" }));
-
-app.get("/conversations", (c) => c.json(listConversations()));
-
-app.get("/conversations/:id", (c) => {
-  const conv = getConversation(c.req.param("id"));
-  if (!conv) return c.json({ error: "Not found" }, 404);
-  return c.json({
-    conversation: conv,
-    messages: listMessages(conv.id),
-  });
-});
-
-app.delete("/conversations/:id", (c) => {
-  if (activeChats.size) return c.json({ error: "Wait for active bot work to finish before deleting a conversation." }, 409);
-  deleteConversation(c.req.param("id"));
-  return c.json({ ok: true });
-});
-
-app.get("/memories", (c) => c.json(listMemories()));
-
-app.delete("/memories/:id", (c) => {
-  deleteMemory(c.req.param("id"));
-  return c.json({ ok: true });
-});
-
-app.route("/", chatRoutes);
-app.route("/", uploadRoutes);
-app.route("/", computerRoutes);
-app.route("/", botRoutes);
-app.route("/", groupRoutes);
-app.route("/", voiceRoutes);
-
-app.post("/messages/:id/reactions", async (c) => {
-  const id = c.req.param("id");
-  let body: { emoji?: unknown };
-  try { body = await c.req.json(); } catch { return c.json({ error: "Invalid JSON" }, 400); }
-  if (!body || !isReaction(body.emoji)) return c.json({ error: "Invalid reaction" }, 400);
-  if (!db.prepare("SELECT id FROM messages WHERE id = ? AND role = 'assistant'").get(id)) return c.json({ error: "Message not found" }, 404);
-  return c.json({ reactions: setReaction(id, "user", body.emoji, true) });
-});
-
-console.log(`Rex API listening on http://localhost:${port}`);
-const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
+const hostname = process.env.REX_HOST?.trim() || "127.0.0.1";
+console.log(`Rex API listening on http://${hostname === "0.0.0.0" ? "localhost" : hostname}:${port}`);
+const server = serve({ fetch: app.fetch, port, hostname });
 attachVncProxy(server as Server, (token) => computers.resolveView(token), () => allowedOrigins);
 computers.startIdleWatch();

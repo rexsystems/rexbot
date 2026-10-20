@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { asUser, TEST_USER } from "./helpers.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,6 +11,8 @@ import { DEFAULT_BOT, DEFAULT_SETTINGS, buildSystemPrompt, type Conversation, ty
 test("groups preserve speakers, permit real private replies only among peers, and enforce turn limits", async () => {
   const directory = mkdtempSync(path.join(tmpdir(), "rex-groups-test-"));
   process.env.REX_DATA_DIR = directory;
+  // The fixture site runs on loopback, which bots may only reach when the operator allows it.
+  process.env.REX_ALLOW_PRIVATE_FETCH = "1";
   const { db } = await import("../src/db.js");
   const { createConversation, getConversation, listMessages, deleteConversation } = await import("../src/conversations.js");
   const { groupRoutes } = await import("../src/routes/groups.js");
@@ -17,10 +20,10 @@ test("groups preserve speakers, permit real private replies only among peers, an
   const { botRoutes } = await import("../src/routes/bots.js");
   const { activeChats, listExchanges, selectGroupResponders } = await import("../src/groups.js");
   const { messageBot } = await import("../src/botMessaging.js");
-  const alpha = createConversation("Alpha", { ...DEFAULT_BOT, name: "Alpha" });
-  const beta = createConversation("Beta", { ...DEFAULT_BOT, name: "Beta" });
-  const outsider = createConversation("Outsider", { ...DEFAULT_BOT, name: "Outsider" });
-  const legacy = createConversation("Old conversation");
+  const alpha = createConversation("Alpha", { ...DEFAULT_BOT, name: "Alpha" }, TEST_USER.id);
+  const beta = createConversation("Beta", { ...DEFAULT_BOT, name: "Beta" }, TEST_USER.id);
+  const outsider = createConversation("Outsider", { ...DEFAULT_BOT, name: "Outsider" }, TEST_USER.id);
+  const legacy = createConversation("Old conversation", undefined, TEST_USER.id);
   const calls: Array<{ messages: Array<{ role: string; content: string }>; tools?: Array<{ function: { name: string } }> }> = [];
   let fetchedFact = false;
   let modelUrl = "";
@@ -43,7 +46,7 @@ test("groups preserve speakers, permit real private replies only among peers, an
   await new Promise<void>((resolve) => model.listen(0, "127.0.0.1", resolve));
   modelUrl = `http://127.0.0.1:${(model.address() as AddressInfo).port}`;
   const settings = { ...DEFAULT_SETTINGS, llmApiKey: "test-only-key", llmBaseUrl: modelUrl };
-  const post = (route: { request: typeof groupRoutes.request }, url: string, body: unknown) => route.request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const post = (route: Parameters<typeof asUser>[0], url: string, body: unknown) => asUser(route).request(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   try {
     for (const memberIds of [[], [alpha.id], [alpha.id, alpha.id], [alpha.id, "missing"], [alpha.id, legacy.id], Array(7).fill(beta.id)]) {
       assert.equal((await post(groupRoutes, "/groups", { title: "Team", memberIds })).status, 400);
@@ -69,9 +72,9 @@ test("groups preserve speakers, permit real private replies only among peers, an
     assert.equal((await post(chatRoutes, "/chat", { conversationId: group.id, message: "Coordinate", settings })).status, 409);
     activeChats.delete(group.id);
     const budget = { remaining: 2 };
-    assert.match(await messageBot(settings, { botId: alpha.id, budget }, outsider.id, "Hello"), /must share a group/);
-    assert.match(await messageBot(settings, { botId: alpha.id, budget }, alpha.id, "Hello"), /another bot/);
-    assert.match(await messageBot(settings, { botId: alpha.id, budget: { remaining: 0 } }, beta.id, "Hello"), /budget is exhausted/);
+    assert.match(await messageBot(settings, { ownerId: TEST_USER.id, botId: alpha.id, budget }, outsider.id, "Hello"), /must share a group/);
+    assert.match(await messageBot(settings, { ownerId: TEST_USER.id, botId: alpha.id, budget }, alpha.id, "Hello"), /another bot/);
+    assert.match(await messageBot(settings, { ownerId: TEST_USER.id, botId: alpha.id, budget: { remaining: 0 } }, beta.id, "Hello"), /budget is exhausted/);
     assert.equal(budget.remaining, 2);
     const result = await post(chatRoutes, "/chat", { conversationId: group.id, message: "Coordinate", respondTo: "all", settings });
     assert.equal(result.status, 200);
@@ -94,7 +97,7 @@ test("groups preserve speakers, permit real private replies only among peers, an
     assert.ok(privateCalls.length >= 2);
     assert.ok(privateCalls.every((call) => !call.tools?.some((tool) => tool.function.name === "message_bot" || tool.function.name === "react_message")));
     assert.ok(calls.filter((call) => !call.messages[0]!.content.includes("answering a private request")).every((call) => call.messages[0]!.content.includes("R-38")));
-    const log = await groupRoutes.request(`/groups/${group.id}/exchanges`);
+    const log = await asUser(groupRoutes).request(`/groups/${group.id}/exchanges`);
     assert.deepEqual(await log.json(), exchanges);
     for (const [message, expected] of [["Coordinate again", [alpha.id]], ["@Beta check this", [beta.id]], ["@everyone check this", [alpha.id, beta.id]]] as const) {
       const response = await post(chatRoutes, "/chat", { conversationId: group.id, message, settings });
@@ -104,7 +107,7 @@ test("groups preserve speakers, permit real private replies only among peers, an
     }
     await post(groupRoutes, `/groups/${group.id}`, { title: "Renamed team", memberIds: [alpha.id, outsider.id] });
     assert.equal(getConversation(group.id)?.title, "Renamed team");
-    assert.match(await messageBot(settings, { botId: alpha.id, budget }, beta.id, "Hello"), /must share a group/);
+    assert.match(await messageBot(settings, { ownerId: TEST_USER.id, botId: alpha.id, budget }, beta.id, "Hello"), /must share a group/);
     deleteConversation(outsider.id);
     assert.deepEqual(getConversation(group.id)?.memberIds, [alpha.id]);
     deleteConversation(group.id);
