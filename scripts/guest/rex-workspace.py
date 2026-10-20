@@ -2,6 +2,7 @@
 import html
 import base64
 import http.client
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from urllib.parse import urlsplit
 
 
 def location(root, value):
@@ -165,12 +167,41 @@ def project(root, bot, args, allow_browser=True):
     return result
 
 
+def browser(root, bot, args, allow_browser):
+    url = args.get("url")
+    if not isinstance(url, str) or len(url) > 2048 or any(ord(c) < 32 for c in url):
+        raise ValueError("Provide a public http(s) URL.")
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Provide a public http(s) URL without credentials.")
+    host = parsed.hostname.lower()
+    if host == "localhost" or host.endswith((".localhost", ".local")):
+        raise ValueError("Use computer_project open for the local preview.")
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        address = None
+    if address is not None and not address.is_global:
+        raise ValueError("Reference URLs must be public; private addresses are blocked.")
+    if not allow_browser:
+        return {"url": url, "browser_launched": False, "note": "The owner has the screen. Continue independent work; opening the reference is deferred until control is returned."}
+    sessions = json.loads(subprocess.check_output(["rex-sessiond", "status"], text=True, timeout=10))["sessions"]
+    session = next((s for s in sessions if s["botId"] == bot and s["alive"]), None)
+    if not session:
+        raise ValueError("The bot's browser session is unavailable.")
+    with open(os.devnull, "wb") as output:
+        subprocess.Popen(["rex-browser", url], env={**os.environ, "HOME": str(root), "DISPLAY": session["display"]}, stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True)
+    return {"url": url, "browser_launched": True, "note": "Browser launch requested; capture the rendered page with computer_screenshot and verify it loaded before drawing conclusions."}
+
+
 def main(request):
     bot = request["bot"]
     if not isinstance(bot, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", bot) or bot == "owner":
         raise ValueError("Invalid bot id.")
     root = Path("/workspace/bots") / bot
     root.mkdir(parents=True, exist_ok=True)
+    if request["operation"] == "browser":
+        return browser(root, bot, request["args"], request.get("open_browser", True))
     if request["operation"] == "image":
         value = request["args"].get("path")
         if value is None:

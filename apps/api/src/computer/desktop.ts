@@ -341,7 +341,7 @@ export class DesktopComputer {
     });
   }
 
-  async workspace(botId: string, operation: "files" | "project", args: Record<string, unknown>): Promise<string> {
+  async workspace(botId: string, operation: "files" | "project" | "browser", args: Record<string, unknown>): Promise<string> {
     if (Buffer.byteLength(JSON.stringify(args)) > 299_000) throw new Error("Workspace request exceeds 300 KB.");
     return this.withBot(botId, async () => {
       await this.ensureGuestSession(botId);

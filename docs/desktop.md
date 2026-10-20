@@ -79,6 +79,18 @@ The image appears immediately through an assistant-message event, persists with 
 
 ## Reference research, clarifications and vision
 
+`computer_browser` opens a public reference URL directly on the bot's guest screen. Capture the rendered page with
+`computer_screenshot`; the browser launch result alone does not prove the page loaded. Sparse JavaScript page
+responses from `http_fetch` now warn that source text is insufficient to infer the rendered design.
+
+Website implementation turns validate tool evidence before releasing the final reply: referenced domains are
+captured before structured UI writes, and the edited project has a successful server check, an open guest preview
+and a shared screenshot after its latest edits. A vision route must receive the screenshot pixels. Early delivery
+drafts are withheld and returned to the model for up to two corrective attempts. Failure remains visible as an
+incomplete verification report. This check follows known website intent and structured UI writes; it cannot prove
+visual similarity, infer every arbitrary shell edit or replace the model's interpretation of screenshots. Owner
+control can defer browser opening while independent work continues.
+
 The bot instructions require inspecting official reference pages when a request names a product or website. For example, "like Cloudflare" should lead to reference research and, when needed, a clarification about visual style versus product functionality. The computer workflow asks bots to open their project, test relevant interactions, capture meaningful before/after screenshots and correct observed defects. These are model instructions, not a guarantee that every model follows them on every turn.
 
 The `ask_user` tool creates one persisted question card in the current conversation, with one to three focused questions and optional choices. The answer dialog always supports custom text. A successful tool call pauses dependent work rather than letting the bot guess. `POST /questions/:id/answer` validates account ownership, rejects repeated answers and resumes the bot in that conversation. An ordinary user message can also answer a pending question. Reloading preserves pending/answered cards; cancelling the modal does not discard its local draft. Model/provider errors during continuation are saved as a visible chat reply.

@@ -66,7 +66,7 @@ test("messages sent during generation are saved immediately and interrupt the mo
       response.end(`data: ${JSON.stringify({ choices: [{ delta: { content: `${name} took over.` } }] })}\n\ndata: [DONE]\n\n`);
       return;
     }
-    if (users.at(-1).content === "Build a red site") {
+    if (users.at(-1).content === "Write a red label") {
       response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: "Starting the layout." } }] })}\n\n`);
       response.once("close", () => { firstClosed = true; });
       firstStarted();
@@ -80,7 +80,7 @@ test("messages sent during generation are saved immediately and interrupt the mo
   const bot = createConversation("Live", { ...DEFAULT_BOT, name: "Live" }, TEST_USER.id);
   const send = (message: string) => asUser(chatRoutes).request("/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: bot.id, message, settings }) });
   try {
-    const first = await send("Build a red site");
+    const first = await send("Write a red label");
     await started;
     const second = await send("Actually, use green");
     assert.equal(second.status, 200);

@@ -142,6 +142,7 @@ test("owner control reserves keyboard input while background work continues", as
   assert.ok(JSON.parse(await computer.screenshot("bot_a")).path);
   assert.equal(JSON.parse(await computer.workspace("bot_a", "files", { action: "write", path: "index.html", content: "working" })).operation, "files");
   assert.equal(JSON.parse(await computer.workspace("bot_a", "project", { action: "start" })).browser_launched, false);
+  assert.equal(JSON.parse(await computer.workspace("bot_a", "browser", { url: "https://example.com" })).browser_launched, false);
   computer.lastUsed = 0;
   assert.equal(computer.isIdle(1), false);
   computer.releaseControl("bot_a");

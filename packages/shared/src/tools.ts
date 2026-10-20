@@ -73,6 +73,12 @@ const DESKTOP_PROJECT: ToolDefinition = {
   }, required: ["action"] },
 };
 
+const DESKTOP_BROWSER: ToolDefinition = {
+  name: "computer_browser",
+  description: "Open a public reference website in your own guest browser, without shell commands. Then use computer_screenshot to inspect the rendered page (pixels require a vision connection). Use this before implementing a site inspired by a URL; http_fetch only extracts source text and may return just a title for JavaScript apps. For your local project, use computer_project open instead. Does not take the owner's keyboard.",
+  parameters: { type: "object", properties: { url: { type: "string", description: "Public http(s) reference URL" } }, required: ["url"] },
+};
+
 const DESKTOP_SCREENSHOT: ToolDefinition = {
   name: "computer_screenshot",
   description: "Capture your Rex Computer screen for inspection. If the selected connection supports vision, image pixels are included in the next model round by default; inspect=false skips this. Otherwise only metadata is available: do not claim to see pixels. With share=true, also attach the actual image to the owner's current chat. Optional path selects a saved screenshot inside your workspace (e.g. another viewport); caption is optional. Private bot replies cannot post chat attachments.",
@@ -208,7 +214,7 @@ export interface ComputerToolOptions {
 }
 
 export function toolDefinitions(options: ComputerToolOptions = {}): ToolDefinition[] {
-  const computerTools = options.desktop ? [DESKTOP_FILES, DESKTOP_PROJECT, DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
+  const computerTools = options.desktop ? [DESKTOP_BROWSER, DESKTOP_FILES, DESKTOP_PROJECT, DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
   return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : []), ...(options.routines ? [ROUTINE_TOOL] : []), ...(options.skills ? [LOAD_SKILL_TOOL] : [])];
 }
 

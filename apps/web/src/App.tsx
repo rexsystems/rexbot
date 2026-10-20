@@ -100,7 +100,7 @@ function toThread(messages: ChatMessage[]): ThreadItem[] {
   return messages.filter((message) => message.toolName !== "react_message").map((message): ThreadItem => {
     if (message.role !== "tool") return { kind: "message", message };
     const result = message.toolName === "computer_exec" ? computerResult(message.content) : null;
-    const failed = /^(computer_exec failed:|computer_(input|screenshot|files|project) (failed|unavailable)|ask_user (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
+    const failed = /^(computer_exec failed:|computer_(input|screenshot|files|project|browser) (failed|unavailable)|ask_user (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
     return { kind: "tool", id: message.id, tool: message.toolName ?? "tool", status: failed ? "error" : "done", detail: message.content };
   });
 }
@@ -110,7 +110,7 @@ function toolIcon(tool: string) {
   if (tool === "message_bot") return <IconGroup size={ICON_LG} />;
   if (tool === "computer_input" || tool === "computer_screenshot") return <IconComputer size={ICON_LG} />;
   if (tool.includes("search")) return <IconSearch size={ICON_LG} stroke={1.5} />;
-  if (tool.includes("fetch") || tool.includes("http")) {
+  if (tool === "computer_browser" || tool.includes("fetch") || tool.includes("http")) {
     return <IconWorldWww size={ICON_LG} stroke={1.5} />;
   }
   return <IconTool size={ICON_LG} stroke={1.5} />;
@@ -123,7 +123,7 @@ function computerResult(detail?: string): ComputerResult | null {
   } catch { return null; }
 }
 
-const toolLabels: Record<string, string> = { ask_user: "Questions", computer_files: "Project files", computer_project: "Project server", computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
+const toolLabels: Record<string, string> = { ask_user: "Questions", computer_browser: "Browser", computer_files: "Project files", computer_project: "Project server", computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
 
 export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
@@ -601,7 +601,7 @@ export function App() {
           }
           if (ev.type === "tool_start") {
             if (!viewingStream()) return;
-            if (ev.tool === "computer_input" || ev.tool === "computer_screenshot" || ev.tool === "computer_project") {
+            if (ev.tool === "computer_input" || ev.tool === "computer_screenshot" || ev.tool === "computer_project" || ev.tool === "computer_browser") {
               setComputerFocus(speaker.botId);
               if (desktopComputer) setShowComputer(true);
             }

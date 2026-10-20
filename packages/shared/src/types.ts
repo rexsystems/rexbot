@@ -181,7 +181,7 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_files" | "computer_project" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine" | "load_skill" | "ask_user";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_files" | "computer_project" | "computer_browser" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine" | "load_skill" | "ask_user";
 
 export interface ChatQuestion {
   id: string;

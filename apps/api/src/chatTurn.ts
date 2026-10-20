@@ -40,6 +40,7 @@ import { userTimeZone } from "./routines.js";
 import { skillSummaries } from "./skills.js";
 import { hasUsableModel, resolveModelSettings, type ModelSettings } from "./providers.js";
 import { uploadImages, type ModelImage } from "./vision.js";
+import { WebWorkflow } from "./webWorkflow.js";
 
 export type TurnEvent = SseEvent;
 
@@ -217,7 +218,10 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
         let waitingForAnswer = false;
         let assistantReasoning: string | undefined;
         let emittedAnswer = "";
+        const workflow = computers.desktop ? new WebWorkflow(message, !!settings.route?.vision) : undefined;
+        let allowEmission = !workflow?.active;
         const emitAnswer = (text: string, complete = false) => {
+          if (!allowEmission) return;
           const visible = botReplyText(text, responder.bot?.name, complete);
           if (visible.length > emittedAnswer.length) send({ type: "delta", text: visible.slice(emittedAnswer.length) });
           emittedAnswer = visible;
@@ -236,6 +240,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           }
           for (const update of live.pending.splice(0)) {
             latestUserMessage = update;
+            workflow?.update(update.content);
             if (!seen.has(update.id)) {
               llmMessages.push(...historyToLlm([update], settings, responder.id));
               seen.add(update.id);
@@ -250,6 +255,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           let reasoning: string | undefined;
           emittedAnswer = "";
           let sawToolCalls = false;
+          allowEmission = !workflow?.active;
 
           const generation = new AbortController();
           live.generation = generation;
@@ -291,11 +297,12 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           } finally {
             live.generation = undefined;
           }
+          allowEmission = !workflow?.missing().length;
           emitAnswer(content, true);
           assistantReasoning = reasoning;
 
           if (live.pending.length) {
-            if (content) {
+            if (content && allowEmission) {
               const partial = insertMessage({ conversationId: conv.id, role: "assistant", content: botReplyText(content, responder.bot?.name), createdAt: contentStartedAt, reasoning: reasoning === undefined ? undefined : { content: reasoning, scope: reasoningScope(settings) }, ...speaker });
               send({ type: "message_done", messageId: partial.id });
               llmMessages.push({ role: "assistant", content, ...responseReasoning(reasoning, settings) });
@@ -308,6 +315,19 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           }
 
           if (!sawToolCalls || toolAcc.size === 0) {
+            if (workflow?.missing().length) {
+              const correction = round < maxToolRounds - 1 ? workflow.correction() : undefined;
+              if (correction) {
+                llmMessages.push({ role: "assistant", content: content || "I need to finish the verification.", ...responseReasoning(reasoning, settings) });
+                llmMessages[0]!.content += `\n\n${correction}`;
+                assistantText = "";
+                assistantReasoning = undefined;
+                continue;
+              }
+              content = assistantText = workflow.incomplete();
+            }
+            allowEmission = true;
+            emitAnswer(content, true);
             if (!content && !assistantText) {
               assistantText = "…";
               send({ type: "delta", text: assistantText });
@@ -328,7 +348,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
             ...responseReasoning(reasoning, settings),
           });
 
-          if (content) {
+          if (content && allowEmission) {
             insertMessage({
               conversationId: conv.id,
               role: "assistant",
@@ -346,7 +366,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
               input: safeParse(call.function.arguments),
             });
             const inspected: ModelImage[] = [];
-            const output = waitingForAnswer ? "Skipped: waiting for the user's clarification. Do not perform dependent work yet." : live.pending.length ? "Skipped: the user sent a new message. Read the update before taking further actions." : await runTool(
+            const output = waitingForAnswer ? "Skipped: waiting for the user's clarification. Do not perform dependent work yet." : live.pending.length ? "Skipped: the user sent a new message. Read the update before taking further actions." : workflow?.before(call.function.name, safeParse(call.function.arguments) as Record<string, unknown>) ?? await runTool(
               call.function.name,
               call.function.arguments,
               settings,
@@ -371,6 +391,8 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
               }
             }
             if (["computer_input", "computer_screenshot", "computer_files", "computer_project"].includes(call.function.name) && /^computer_\w+ (failed|unavailable)/.test(output)) toolError = output;
+            if (call.function.name === "computer_browser" && /^computer_browser (failed|unavailable)/.test(output)) toolError = output;
+            workflow?.observe(call.function.name, safeParse(call.function.arguments) as Record<string, unknown>, output);
             send({
               type: "tool_end",
               tool: call.function.name,
@@ -409,7 +431,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
         const saved = insertMessage({
           conversationId: conv.id,
           role: "assistant",
-          content: botReplyText(assistantText, responder.bot?.name) || "(no response)",
+          content: botReplyText(assistantText, responder.bot?.name) || (workflow?.missing().length ? workflow.incomplete() : "(no response)"),
           reasoning: assistantReasoning === undefined ? undefined : { content: assistantReasoning, scope: reasoningScope(settings) },
           ...speaker,
         });

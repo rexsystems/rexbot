@@ -122,7 +122,7 @@ async function httpFetch(url: string): Promise<string> {
       .replace(/\s+/g, " ")
       .trim();
     return truncate(
-      `Status ${res.status} ${res.statusText}\nURL: ${res.url}\n\n${stripped || "(empty)"}`,
+      `Status ${res.status} ${res.statusText}\nURL: ${res.url}\nThis tool extracts source text only, not the rendered design.${stripped.length < 400 && /<script\b/i.test(text) ? " Sparse source text: this page likely needs JavaScript rendering. A title is insufficient to identify its layout, features or statistics. Open the original URL with computer_browser, then computer_screenshot; do not substitute a similarly named search result." : ""}\n\n${stripped || "(empty)"}`,
     );
   } catch (err) {
     return `http_fetch failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -169,13 +169,14 @@ export async function runTool(
     }
     case "computer_files":
     case "computer_project":
+    case "computer_browser":
     case "computer_input":
     case "computer_screenshot": {
       const desktop = computer();
       if (!isDesktopComputer(desktop)) return `${name} unavailable: this computer has no screen.`;
       if (!context?.botId) return `${name} unavailable: only bots have a screen.`;
       try {
-        if (name === "computer_files" || name === "computer_project") return await desktop.workspace(context.botId, name === "computer_files" ? "files" : "project", args);
+        if (name === "computer_files" || name === "computer_project" || name === "computer_browser") return await desktop.workspace(context.botId, name === "computer_files" ? "files" : name === "computer_browser" ? "browser" : "project", args);
         if (name === "computer_screenshot") {
           if (args.share !== undefined && typeof args.share !== "boolean") return "computer_screenshot failed: share must be a boolean.";
           if (args.inspect !== undefined && typeof args.inspect !== "boolean") return "computer_screenshot failed: inspect must be a boolean.";

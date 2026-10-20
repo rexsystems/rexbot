@@ -202,6 +202,20 @@ The existing local App navigation guards are included with this change because s
 during streaming; a browser regression verifies that a background reply never appears in the other chat. Local
 provider/Bedrock changes remain outside these commits.
 
+Frost's stored run showed that both reference fetches returned only a title, then a GitHub search result was
+mistaken for visual research. The bot wrote index.html and handed server startup back to the owner. Sparse scripted
+pages now carry an explicit source-only warning. computer_browser opens the exact public reference on the guest
+screen, respecting owner control and retaining the guest's public-only proxy boundary.
+
+Website turns now check tool evidence before delivering: referenced domains need a rendered-screen capture before
+structured UI writes; edited pages need a healthy matching project server, a guest browser preview and a current
+shared screenshot. Vision routes must actually receive pixels. Premature drafts are withheld from SSE/history and
+returned to the model for continued work, with two corrective retries and an honest incomplete result at the limit.
+Tests reproduce the early-success reply with and without simultaneous tool calls, failed/stale/wrong-project
+evidence, owner-control deferral, explicit stop and ordinary informational questions. All 47 API tests, focused
+question/realtime browser checks, typecheck, build and a live guest reference-browser/isolation run pass. These are
+workflow evidence checks, not a guarantee of a model's visual judgment or fidelity to a reference.
+
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
 - **Claude (Anthropic)**: third-party apps must use API keys from Claude Console. Anthropic's Claude Code legal

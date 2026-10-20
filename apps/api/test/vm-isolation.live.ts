@@ -38,7 +38,18 @@ test("live guest reaches public websites through the proxy and cannot reach the 
     assert.notEqual(direct.code, 0, "direct guest-to-host traffic must fail");
     assert.equal(hostHits, 0);
     const desktop = new DesktopComputer(machine, (args, input, timeout, outputLimit) => ssh(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, ...args], input, timeout, outputLimit), () => { throw new Error("No screen tunnel needed in this check"); });
-    const workspace = async (operation: "files" | "project", args: Record<string, unknown>) => JSON.parse(await desktop.workspace("project-check", operation, args));
+    const workspace = async (operation: "files" | "project" | "browser", args: Record<string, unknown>) => JSON.parse(await desktop.workspace("project-check", operation, args));
+    for (const url of ["file:///etc/passwd", "http://127.0.0.1/", "http://169.254.169.254/", "https://user:password@example.com/"]) {
+      await assert.rejects(workspace("browser", { url }), /public|credentials|local preview/);
+    }
+    assert.equal((await workspace("browser", { url: "https://example.com" })).browser_launched, true);
+    let reference = "";
+    for (let attempt = 0; attempt < 15; attempt++) {
+      reference = await desktop.screenshot("project-check");
+      if (reference.includes("Example Domain")) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    assert.match(reference, /Example Domain/, "the structured browser tool must render the public reference");
     const original = '<!doctype html><title>Guest project check</title><h1>Before edit</h1>';
     assert.equal((await workspace("files", { action: "write", path: "site/index.html", content: original })).saved, true);
     assert.equal((await workspace("files", { action: "read", path: "site/index.html" })).content, original);
@@ -70,6 +81,7 @@ PY`, "project-check");
     assert.ok((await desktop.image("project-check", "large-transfer.png")).bytes.length > 40_000);
     await assert.rejects(desktop.image("project-check", "../../outside.png"), /inside this bot/);
     await desktop.takeControl("project-check");
+    assert.equal((await workspace("browser", { url: "https://example.com" })).browser_launched, false);
     await assert.rejects(desktop.input("project-check", { action: "key", keys: "Return" }), /user has the mouse and keyboard/);
     const background = await desktop.execute('printf "%s" "${DISPLAY-unset}"', "project-check");
     assert.equal(background.exitCode, 0);

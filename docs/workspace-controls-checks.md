@@ -47,7 +47,12 @@ The live guest test also writes and reads a project through `computer_files`, re
 - Liveliness PASS: the established ENERGY 1 / RHYTHM 1 / MOTION 1 remains. Existing spacing, warm surfaces and the orange selected name provide orientation. The mobile menu screenshot was visually inspected.
 - Craftsmanship PASS: all 45 API tests, typecheck and build pass. Twelve existing navigation/layout/provider browser checks pass, followed by passing realtime navigation and two sidebar browser checks. Updated hover tests explicitly hover the row before clicking a control that is intentionally hidden. Switching chats during streaming leaves the result in its original conversation. The relevant preexisting App navigation guards are included; unrelated provider edits remain local.
 
-## Limits
+## Website delivery follow-up
+
+- Hard Gate PASS: an API fixture reproduces Frost's premature delivery and verifies it never reaches chat deltas or saved assistant history, including drafts accompanying tool calls. Reference inspection precedes structured UI writes; a live matching preview and a fresh shared screenshot precede delivery. Failure has bounded retries and an explicit incomplete state. Normal questions and explicit cancellation do not require a site build.
+- Purpose Gate PASS: the Browser activity reuses existing tool rows, the webpage icon and guest screen. Its structured URL field avoids shell quoting for reference navigation. The fetch warning explains source text limitations instead of presenting a sparse title as visual research. No new visual layout, decorative asset or invented product statistic was introduced.
+- Liveliness PASS: existing ENERGY 1 / RHYTHM 1 / MOTION 1, typography, spacing and activity states remain unchanged. Tool activity keeps progress visible while unfinished final drafts are buffered.
+- Craftsmanship PASS: all 47 API tests, focused question/realtime browser checks, typecheck and build pass. A fresh QEMU overlay renders Example Domain through the structured browser operation, rejects private/credential/file URLs, defers opening during owner control and passes the existing network/project/screenshot checks. The test uses its own proxy port to avoid the running application's listener. Model fixtures verify workflow evidence, not aesthetic quality; no paid provider was called. Existing local provider edits remain separate.
 
 Sidebar context actions retain the established ENERGY 1 / RHYTHM 1 / MOTION 1 direction. Transparent conversation
 rows follow the owner's explicit request; the selected name uses the existing orange accent for orientation.
@@ -59,6 +64,8 @@ million-plus counts keep tables readable while the tooltip preserves exact value
 ENERGY 1 / RHYTHM 1 / MOTION 1, warm surfaces and orange accent retained); Craftsmanship PASS (threshold/billion
 browser checks and typecheck passed, screenshot inspected). Realtime API regression also verifies that the original
 task stays in model context and tools can continue after a side question; prompt adherence remains model-dependent.
+
+## Limits
 
 The launcher browser tests simulate the native command bridge. Rust validation tests and actual Linux installer builds pass, but the native application's remote login flow has not been manually tested across desktop operating systems. Windows and macOS installers were not built here. No production website was deployed during this work; the server needs deployment and restart to apply the changes. Existing VMs with unrestricted network arguments restart on next use while retaining their disks.
 
