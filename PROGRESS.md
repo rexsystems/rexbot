@@ -148,7 +148,7 @@ Desktop website connections, cookie-only web authentication, dependency upgrades
 DSML parsing, guest network boundaries, and click-to-open computer controls are implemented. DSML fixes were
 pushed as `18ab9e8`. Linux DEB/RPM desktop installers build successfully. The live VM network check passed;
 the live noVNC check verified browser typing by reading a file written in the guest. The full suite passes:
-41 API tests, 15 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
+43 API tests, 17 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
 VM image. npm audits report no known vulnerabilities, and no workspace packages are outdated.
 Vision and server-side Tavily/Google settings remain future work. Deployment and boundaries: `docs/desktop.md`.
 
@@ -173,7 +173,13 @@ uses the actual viewer HTML and exercises expiry, disconnect, keyboard retry, a 
 The remaining DeepSeek leak was traced to actual saved output using double fullwidth bars (`<｜｜DSML｜｜ calls>`).
 The parser and historical-reply sanitizer now handle repeated/spaced ASCII and fullwidth bars. Regression checks
 exercise all forms across character-level stream splits and preserve the command text exactly. Old stored calls
-are hidden by rendering sanitization; they are never executed retroactively. Guest image sharing is the next follow-up.
+are hidden by rendering sanitization; they are never executed retroactively. The fix was pushed as `f2dae47`.
+
+Guest image sharing now uses computer_screenshot share=true, optionally with a saved workspace image path and
+caption. Captures travel from the guest over a bounded SSH channel and are stored as owner-scoped attachments
+on bot-authored messages, emitted immediately and preserved after reload. Larger bot previews reuse the existing
+image viewer. API checks cover real DSML execution through the sharing tool, persistence, raster validation and
+cross-account denial. Live QEMU checks capture an actual screen and transfer a PNG above the old 40 KB limit.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

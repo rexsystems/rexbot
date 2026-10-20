@@ -75,8 +75,8 @@ const DESKTOP_PROJECT: ToolDefinition = {
 
 const DESKTOP_SCREENSHOT: ToolDefinition = {
   name: "computer_screenshot",
-  description: "Capture your Rex Computer screen. Saves a PNG in your workspace and returns its path, the screen size, the active window and the open window titles. You cannot see the pixels; use the titles and paths to plan your next action.",
-  parameters: { type: "object", properties: {} },
+  description: "Capture your Rex Computer screen. With share=true, attach the actual image to the owner's current chat, where they can enlarge it. Optionally provide path to attach a saved screenshot or image inside your own workspace instead of capturing the current screen (e.g. a browser screenshot at a specific viewport). caption is optional. Without share, returns screen metadata and a saved PNG path. You cannot see the pixels; do not claim to have visually inspected them. Private bot replies cannot post attachments to the owner's chat.",
+  parameters: { type: "object", properties: { share: { type: "boolean", description: "Attach the actual image to this chat" }, path: { type: "string", description: "Optional image path in your own workspace; requires share=true" }, caption: { type: "string", description: "Optional short image caption, up to 1000 characters" } } },
 };
 
 const BASE_TOOLS: ToolDefinition[] = [

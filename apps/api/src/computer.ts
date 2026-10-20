@@ -292,7 +292,7 @@ export class ComputerFleet {
     };
     const ssh = { host: "127.0.0.1", user: "rex", port: row.ssh_port, keyFile: this.host.keyPath, knownHostsFile: machine.knownHostsPath };
     const kvm = this.host.kvmUsable();
-    return new DesktopComputer(power, (args, input, timeout) => sshRunner(ssh)(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, `HTTP_PROXY=${GUEST_PROXY}`, `HTTPS_PROXY=${GUEST_PROXY}`, "no_proxy=localhost,127.0.0.1", `CHROMIUM_FLAGS=--proxy-server=${GUEST_PROXY}`, ...args], input, timeout), (local, remote) => tunnelOpener(ssh)(local, remote), { bootTimeoutMs: kvm ? 240_000 : 900_000 });
+    return new DesktopComputer(power, (args, input, timeout, outputLimit) => sshRunner(ssh)(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, `HTTP_PROXY=${GUEST_PROXY}`, `HTTPS_PROXY=${GUEST_PROXY}`, "no_proxy=localhost,127.0.0.1", `CHROMIUM_FLAGS=--proxy-server=${GUEST_PROXY}`, ...args], input, timeout, outputLimit), (local, remote) => tunnelOpener(ssh)(local, remote), { bootTimeoutMs: kvm ? 240_000 : 900_000 });
   }
 
   /** Refuses to boot past the admin's limit on running VMs. */

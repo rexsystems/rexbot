@@ -16,7 +16,7 @@ export interface SshResult {
   timedOut: boolean;
 }
 
-export type SshRunner = (remoteArgs: string[], input: string | undefined, timeoutMs: number) => Promise<SshResult>;
+export type SshRunner = (remoteArgs: string[], input: string | undefined, timeoutMs: number, outputLimit?: number) => Promise<SshResult>;
 export type TunnelOpener = (localPort: number, remotePort: number) => ChildProcess;
 
 function baseArgs(config: SshConfig) {
@@ -32,12 +32,12 @@ function baseArgs(config: SshConfig) {
 }
 
 export function sshRunner(config: SshConfig): SshRunner {
-  return (remoteArgs, input, timeoutMs) => new Promise((resolve, reject) => {
+  return (remoteArgs, input, timeoutMs, outputLimit = OUTPUT_LIMIT) => new Promise((resolve, reject) => {
     // Remote args are fixed subcommands plus validated ids; user text only travels on stdin.
     const child = spawn("ssh", [...baseArgs(config), `${config.user}@${config.host}`, "--", ...remoteArgs], { stdio: ["pipe", "pipe", "pipe"], env: process.env });
     let output = "";
     let timedOut = false;
-    const collect = (data: Buffer) => { output = (output + data.toString()).slice(0, OUTPUT_LIMIT); };
+    const collect = (data: Buffer) => { output = (output + data.toString()).slice(0, outputLimit); };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
     const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, timeoutMs);

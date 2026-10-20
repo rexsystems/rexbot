@@ -720,6 +720,8 @@ body {
 .attachment-image-button { display: block; width: 100%; min-height: 94px; border-radius: 11px 11px 0 0; overflow: hidden; }
 .attachment-image-button img { display: block; width: 100%; height: 104px; object-fit: cover; }
 .attachment-gallery-draft .attachment-image-button img { height: 86px; }
+.bubble-assistant .attachment-card:has(.attachment-image-button) { width: 640px; }
+.bubble-assistant .attachment-image-button img { height: auto; max-height: 400px; object-fit: contain; }
 .attachment-remove { position: absolute; right: 3px; top: 3px; border-radius: 10px; background: rgba(12,11,10,.9); color: #f0ebe3; }
 .attachment-caption { padding: 6px 8px; min-width: 0; }
 .attachment-caption .mantine-Text-root { font-size: .75rem; }

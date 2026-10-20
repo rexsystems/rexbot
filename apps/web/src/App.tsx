@@ -429,6 +429,7 @@ export function App() {
             setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === event.message.id) ? previous : [...previous, { kind: "message", message: event.message }]);
           }
           if (event.type === "error") setError(event.message);
+          if (event.type === "assistant_message") setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === event.message.id) ? previous : [...previous, { kind: "message", message: event.message }]);
           if (event.type === "speaker") replySpeaker = { botId: event.botId, botName: event.botName };
           if (event.type === "delta") {
             newReply = true;
@@ -529,6 +530,15 @@ export function App() {
           }
           if (ev.type === "reaction") {
             setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === ev.messageId ? { ...item, message: { ...item.message, reactions: ev.reactions } } : item));
+          }
+          if (ev.type === "assistant_message") {
+            const currentId = streamingAssistantId;
+            setThread((previous) => {
+              if (previous.some((item) => item.kind === "message" && item.message.id === ev.message.id)) return previous;
+              const at = previous.findIndex((item) => item.kind === "message" && item.message.id === currentId);
+              const attachment: ThreadItem = { kind: "message", message: ev.message };
+              return at < 0 ? [...previous, attachment] : [...previous.slice(0, at), attachment, ...previous.slice(at)];
+            });
           }
           if (ev.type === "message_done") {
             const currentId = streamingAssistantId;

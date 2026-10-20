@@ -1,5 +1,6 @@
 """Structured project operations, executed only inside the guest over SSH."""
 import html
+import base64
 import http.client
 import json
 import os
@@ -170,6 +171,19 @@ def main(request):
         raise ValueError("Invalid bot id.")
     root = Path("/workspace/bots") / bot
     root.mkdir(parents=True, exist_ok=True)
+    if request["operation"] == "image":
+        value = request["args"].get("path")
+        if value is None:
+            result = json.loads(subprocess.check_output(["rex-sessiond", "screenshot", bot], text=True, timeout=25))
+            value = result.get("path")
+            if not value:
+                raise ValueError("The screen capture did not produce an image.")
+        target = location(root, value)
+        with target.open("rb") as handle:
+            data = handle.read(8 * 1024 * 1024 + 1)
+        if len(data) > 8 * 1024 * 1024:
+            raise ValueError("Image exceeds 8 MB. Capture a smaller image.")
+        return {"filename": target.name, "data": base64.b64encode(data).decode("ascii")}
     return files(root, request["args"]) if request["operation"] == "files" else project(root, bot, request["args"], request.get("open_browser", True))
 
 

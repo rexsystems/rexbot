@@ -37,7 +37,7 @@ test("live guest reaches public websites through the proxy and cannot reach the 
     const direct = await run(`curl --noproxy '*' -s --max-time 3 http://10.0.2.2:${hostPort}/health`);
     assert.notEqual(direct.code, 0, "direct guest-to-host traffic must fail");
     assert.equal(hostHits, 0);
-    const desktop = new DesktopComputer(machine, (args, input, timeout) => ssh(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, ...args], input, timeout), () => { throw new Error("No screen tunnel needed in this check"); });
+    const desktop = new DesktopComputer(machine, (args, input, timeout, outputLimit) => ssh(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, ...args], input, timeout, outputLimit), () => { throw new Error("No screen tunnel needed in this check"); });
     const workspace = async (operation: "files" | "project", args: Record<string, unknown>) => JSON.parse(await desktop.workspace("project-check", operation, args));
     const original = '<!doctype html><title>Guest project check</title><h1>Before edit</h1>';
     assert.equal((await workspace("files", { action: "write", path: "site/index.html", content: original })).saved, true);
@@ -55,6 +55,20 @@ test("live guest reaches public websites through the proxy and cannot reach the 
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     assert.match(windows, /Guest project check/, "the guest browser must load the local project");
+    const screen = await desktop.image("project-check");
+    assert.equal(screen.bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.ok(screen.bytes.length > 1000);
+    const noise = await desktop.execute(`python3 - <<'PY'
+import os, struct, zlib
+def chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+data = b''.join(b'\\0' + os.urandom(256 * 3) for _ in range(256))
+png = b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 256, 256, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(data)) + chunk(b'IEND', b'')
+open('large-transfer.png', 'wb').write(png)
+PY`, "project-check");
+    assert.equal(noise.exitCode, 0, noise.output);
+    assert.ok((await desktop.image("project-check", "large-transfer.png")).bytes.length > 40_000);
+    await assert.rejects(desktop.image("project-check", "../../outside.png"), /inside this bot/);
     await desktop.takeControl("project-check");
     await assert.rejects(desktop.input("project-check", { action: "key", keys: "Return" }), /user has the mouse and keyboard/);
     const background = await desktop.execute('printf "%s" "${DISPLAY-unset}"', "project-check");

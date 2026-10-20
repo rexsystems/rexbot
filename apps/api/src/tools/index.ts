@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { safeGet } from "./safeFetch.js";
 import path from "node:path";
 import { PDFParse } from "pdf-parse";
-import { isPreviewImage, type ClientSettings } from "@rex/shared";
+import { isPreviewImage, type ClientSettings, type SseEvent } from "@rex/shared";
 import { db } from "../db.js";
 import { computers, isDesktopComputer, UnavailableComputer } from "../computer.js";
 import { isReaction, setReaction } from "../reactions.js";
@@ -132,7 +132,7 @@ export async function runTool(
   name: string,
   argsJson: string,
   settings: ClientSettings,
-  context?: { userMessageId: string; ownerId?: string; conversationId?: string; timeZone?: string } & Partial<MessagingContext>,
+  context?: { userMessageId: string; ownerId?: string; conversationId?: string; timeZone?: string; send?: (event: SseEvent) => void } & Partial<MessagingContext>,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -166,7 +166,21 @@ export async function runTool(
       if (!context?.botId) return `${name} unavailable: only bots have a screen.`;
       try {
         if (name === "computer_files" || name === "computer_project") return await desktop.workspace(context.botId, name === "computer_files" ? "files" : "project", args);
-        if (name === "computer_screenshot") return await desktop.screenshot(context.botId);
+        if (name === "computer_screenshot") {
+          if (args.share !== undefined && typeof args.share !== "boolean") return "computer_screenshot failed: share must be a boolean.";
+          if (args.share === true) {
+            if (!context.ownerId || !context.conversationId) return "computer_screenshot unavailable: images can only be shared in the owner's conversation, not private bot replies.";
+            if (args.path !== undefined && typeof args.path !== "string") return "computer_screenshot failed: path must be a workspace image path.";
+            if (args.caption !== undefined && (typeof args.caption !== "string" || args.caption.length > 1000)) return "computer_screenshot failed: caption must be text up to 1000 characters.";
+            const image = await desktop.image(context.botId, args.path as string | undefined);
+            const { shareComputerImage } = await import("../computerImages.js");
+            const message = shareComputerImage(context.ownerId, context.conversationId, context.botId, image, args.caption as string | undefined);
+            context.send?.({ type: "assistant_message", message });
+            return JSON.stringify({ shared: true, message_id: message.id, attachment: message.attachments![0] });
+          }
+          if (args.path !== undefined) return "computer_screenshot failed: set share=true to attach a saved image.";
+          return await desktop.screenshot(context.botId);
+        }
         return await desktop.input(context.botId, args);
       } catch (err) {
         return `${name} failed: ${err instanceof Error ? err.message : String(err)}`;

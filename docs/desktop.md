@@ -68,3 +68,11 @@ The server runs inside the VM and survives individual tool calls. The owner sees
 The composer remains available during a reply, including attachments. New messages are saved immediately. During text generation, the server cancels that provider stream and restarts with the updated conversation; partial text already shown stays in history. During a tool command, that command finishes, remaining obsolete tool calls are skipped, and the next model round receives the update. Group mentions can select a different member while the group is working.
 
 There is one active runner per conversation, with up to 32 pending messages. Browser reloads do not cancel that runner. An API process restart still ends active work; this is not a durable job queue or a guarantee of immediate cancellation of guest processes.
+
+## Images from the guest
+
+`computer_screenshot` accepts `share: true` to attach an actual PNG capture to the owner's conversation. An optional `path` selects an existing raster image inside that bot's workspace, such as a browser capture at another viewport; an optional `caption` adds up to 1000 characters. With no share flag, the tool keeps its existing metadata-only behavior.
+
+Capture and file reads run inside the VM. The guest resolves paths within the bot workspace, refuses escaping paths/symlinks, and reads at most 8 MB. Only this transfer uses a larger bounded SSH response limit; ordinary command output keeps its 40 KB limit. The API validates raster signatures, assigns a new upload ID, and attaches the image to a bot-authored message in the owner's conversation. The normal authenticated upload endpoint serves it, with other accounts receiving 404. Private bot replies cannot post images into the owner's conversation.
+
+The image appears immediately through an assistant-message event, persists with the conversation, and uses the existing image viewer. Bot image previews use a larger uncropped surface for reviewing work; click to enlarge. Capturing or sharing an image does not give a text-only model access to its pixels.

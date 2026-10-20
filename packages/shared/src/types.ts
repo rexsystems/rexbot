@@ -192,6 +192,7 @@ export interface ToolCallEvent {
 
 export type SseEvent =
   | { type: "user_message"; message: ChatMessage }
+  | { type: "assistant_message"; message: ChatMessage }
   | { type: "reaction"; messageId: string; reactions: MessageReaction[] }
   | { type: "delta"; text: string }
   | { type: "speaker"; botId: string; botName: string }

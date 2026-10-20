@@ -340,7 +340,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
               call.function.name,
               call.function.arguments,
               settings,
-              { userMessageId: latestUserMessage.id, ownerId: userId, conversationId: conv.id, timeZone, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget },
+              { userMessageId: latestUserMessage.id, ownerId: userId, conversationId: conv.id, timeZone, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget, send },
             );
             if (call.function.name === "react_message") {
               try {
