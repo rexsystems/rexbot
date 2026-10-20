@@ -14,6 +14,7 @@ import {
 import { IconDeviceFloppy, IconKey, IconX } from "./icons";
 import type { ClientSettings, ProviderState } from "@rex/shared";
 import { ModelsPanel } from "./ModelsPanel";
+import { SkillsPanel } from "./SkillsPanel";
 
 export function SettingsModal(props: {
   initial: ClientSettings;
@@ -41,6 +42,7 @@ export function SettingsModal(props: {
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="models">Models</Tabs.Tab>
+          <Tabs.Tab value="skills">Skills</Tabs.Tab>
           <Tabs.Tab value="voice">Voice and memory</Tabs.Tab>
           <Tabs.Tab value="search">Web search</Tabs.Tab>
         </Tabs.List>
@@ -67,6 +69,9 @@ export function SettingsModal(props: {
               </Accordion.Item>
             </Accordion>
           </Stack>
+        </Tabs.Panel>
+        <Tabs.Panel value="skills">
+          <SkillsPanel />
         </Tabs.Panel>
         <Tabs.Panel value="voice">
       <Stack gap="md">
@@ -99,7 +104,8 @@ export function SettingsModal(props: {
           </Stack>
         </Tabs.Panel>
       </Tabs>
-      <Stack gap="md">
+      {/* Skills save on their own; this footer saves the browser-side settings on the other tabs. */}
+      {tab === "skills" ? null : <Stack gap="md">
         <Group justify="flex-end" mt="sm">
           <Button
             variant="default"
@@ -115,7 +121,7 @@ export function SettingsModal(props: {
             Save
           </Button>
         </Group>
-      </Stack>
+      </Stack>}
     </Modal>
   );
 }

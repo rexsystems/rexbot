@@ -177,7 +177,7 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine" | "load_skill";
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";
@@ -334,4 +334,14 @@ export interface RoutineInput {
   schedule: RoutineSchedule;
   timeZone: string;
   enabled?: boolean;
+}
+
+/** A reusable instruction pack. Bots see the name and description and load the instructions when a task matches. */
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  createdAt: string;
+  updatedAt: string;
 }

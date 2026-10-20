@@ -1,5 +1,6 @@
 import type {
   Routine,
+  Skill,
   RoutineInput,
   ModelChoice,
   ProviderConnection,
@@ -228,6 +229,15 @@ export const routines = {
   update: (routineId: string, patch: Partial<RoutineInput>) => json<{ routine: Routine }>(`/routines/${id(routineId)}`, send("PATCH", patch)).then((result) => result.routine),
   remove: (routineId: string) => json<{ ok: boolean }>(`/routines/${id(routineId)}`, { method: "DELETE" }),
   run: (routineId: string) => json<{ ok: boolean; error?: string; routine: Routine }>(`/routines/${id(routineId)}/run`, post()),
+};
+
+type SkillInput = { name: string; description: string; instructions: string };
+
+export const skills = {
+  list: () => json<{ skills: Skill[] }>("/skills").then((result) => result.skills),
+  create: (input: SkillInput) => json<{ skill: Skill }>("/skills", post(input)).then((result) => result.skill),
+  update: (skillId: string, input: Partial<SkillInput>) => json<{ skill: Skill }>(`/skills/${id(skillId)}`, send("PATCH", input)).then((result) => result.skill),
+  remove: (skillId: string) => json<{ ok: boolean }>(`/skills/${id(skillId)}`, { method: "DELETE" }),
 };
 
 export interface CursorStatus { connected: boolean; keyHint: string | null; keyName: string | null }

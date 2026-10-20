@@ -36,6 +36,7 @@ import { activeChats, peers, selectGroupResponders } from "./groups.js";
 import { messageReasoning, reasoningScope, responseReasoning } from "./reasoning.js";
 import { hasCursor } from "./integrations/cursor.js";
 import { userTimeZone } from "./routines.js";
+import { skillSummaries } from "./skills.js";
 import { hasUsableModel, resolveModelSettings, type ModelSettings } from "./providers.js";
 
 export type TurnEvent = SseEvent;
@@ -146,6 +147,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
 
   const timeZone = userTimeZone(userId, input.timeZone);
   const now = { text: new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "full", timeStyle: "short" }).format(new Date()), timeZone };
+  const skills = skillSummaries(userId);
   const conv = conversation;
   const note = input.note ? `\n${input.note}` : "";
   return {
@@ -162,10 +164,10 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
         const speaker = responder.bot ? { botId: responder.id, botName: responder.bot.name } : {};
         if (speaker.botId && speaker.botName) send({ type: "speaker", botId: speaker.botId, botName: speaker.botName });
         const roster = peers(responder.id, conv.kind === "group" ? conv.id : undefined);
-        const tools = toOpenAiTools({ desktop: computers.desktop, cursor: hasCursor(userId), routines: input.allowRoutines !== false }).filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
+        const tools = toOpenAiTools({ desktop: computers.desktop, cursor: hasCursor(userId), routines: input.allowRoutines !== false, skills: skills.length > 0 }).filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
         const groupContext = conv.kind === "group" ? `\nYou are in group ${JSON.stringify(conv.title)}. You were selected to answer this message. Speak only for yourself, without a speaker label. Other members' prior replies are labelled for context. Build on useful work, check claims, and avoid repeating answers. Use message_bot for a specific teammate's private help when useful; do not invent replies on their behalf. ${responders.length > 1 ? "The user explicitly requested everyone; you each get one turn, in order." : "Only one member is replying publicly to this message."}` : "";
         const llmMessages: LlmMessage[] = [
-          { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot, { desktop: computers.desktop, now })}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.${note}` },
+          { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot, { desktop: computers.desktop, now, skills })}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.${note}` },
           ...historyToLlm(listMessages(conv.id), settings, responder.id),
         ];
         let assistantText = "";

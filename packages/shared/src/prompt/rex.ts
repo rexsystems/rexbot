@@ -38,12 +38,15 @@ export interface PromptOptions {
   desktop?: boolean;
   /** Current local date and time, already formatted, plus the zone name. */
   now?: { text: string; timeZone: string };
+  /** The user's skills: names and when to use them. Instructions load through load_skill. */
+  skills?: Array<{ name: string; description: string }>;
 }
 
 export function buildSystemPrompt(memoryBlock?: string, bot?: BotProfile, options: PromptOptions = {}): string {
   const base = `${REX_SYSTEM_PROMPT.replace("{{COMPUTER}}", options.desktop ? DESKTOP_COMPUTER_NOTE : PODMAN_COMPUTER_NOTE)}\n\n${ANTISLOP_RULES}`;
   const clock = options.now ? `\n\nIt is now ${options.now.text} in the user's time zone (${options.now.timeZone}). Use this for "today", "tomorrow" and schedules; don't guess the date.` : "";
-  const prompt = bot ? `${base}\n\nYour display name is ${JSON.stringify(bot.name)}. Use that name instead of Rex when identifying yourself.\nUser's preferences for this bot: ${JSON.stringify(bot.instructions || "Use the default tone.")}${clock}` : `${base}${clock}`;
+  const skills = options.skills?.length ? `\n\n## Skills\nThe user wrote these skills. When a task matches one, call load_skill with its name first and follow it.\n${options.skills.map((skill) => `- ${JSON.stringify(skill.name)}: ${skill.description}`).join("\n")}` : "";
+  const prompt = bot ? `${base}\n\nYour display name is ${JSON.stringify(bot.name)}. Use that name instead of Rex when identifying yourself.\nUser's preferences for this bot: ${JSON.stringify(bot.instructions || "Use the default tone.")}${clock}${skills}` : `${base}${clock}${skills}`;
   if (!memoryBlock?.trim()) return prompt;
   return `${prompt}
 

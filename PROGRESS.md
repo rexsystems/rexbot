@@ -85,7 +85,8 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
       user's time zone with DST handled), run server-side every 30 s, results posted in the chat. Sidebar → Routines,
       plus a `routine` tool so a bot can set one up when asked ("every morning at 8..."). Routine runs can't create routines.
 - [x] The bot knows the current date and time in the user's zone (browser zone, remembered per user).
-- [ ] Skills: reusable instruction packs a bot can load.
+- [x] Skills: per-account instruction packs (Settings → Skills). Bots see names and "when to use" in the prompt
+      and pull full instructions with `load_skill`, so long skills don't cost tokens on every turn.
 - [ ] Better bot rules in the system prompt.
 - [ ] Model vision for image attachments where the provider supports it.
 
@@ -126,6 +127,8 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
   routines use the server-side provider connection, and web search in routines needs the Tavily key that still lives in
   the browser (see Known gaps).
 
+- Phase 6 (skills): `skills.ts`, `routes/skills.ts`, `test/skills.test.ts`, web `SkillsPanel.tsx`.
+
 ### ChatGPT sign-in: why not yet
 
 OpenAI's open-source "Sign in with ChatGPT" plan usage (developers.openai.com/siwc) is real and documented, but:
@@ -143,8 +146,8 @@ OpenAI UI guidelines.
 
 ## Where I stopped
 
-Phase 5 and Phase 6 routines committed. Next: skills (reusable instruction packs per bot), better bot rules,
-vision for image attachments, then moving the Tavily/Google keys server-side so routines can search.
+Phase 5, Phase 6 routines and skills committed. Next: better bot rules, vision for image attachments, then moving
+the Tavily/Google keys server-side so routines can search.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

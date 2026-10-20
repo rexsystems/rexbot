@@ -10,6 +10,8 @@ export DEBIAN_FRONTEND=noninteractive
 # signatures either way, so REX_APT_HTTP=1 (from REX_GUEST_APT_HTTP on the host) switches the mirrors to http.
 if [ "${REX_APT_HTTP:-}" = "1" ]; then
   sed -i 's#https://#http://#g' /etc/apt/mirrors/*.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+  # Use the mirrors directly instead of apt's mirror+file indirection, which some proxies answer with errors.
+  sed -i 's#mirror+file:/etc/apt/mirrors/debian.list#http://deb.debian.org/debian#; s#mirror+file:/etc/apt/mirrors/debian-security.list#http://deb.debian.org/debian-security#' /etc/apt/sources.list.d/*.sources 2>/dev/null || true
 fi
 # Fail here, not at install, when the mirrors are unreachable.
 export APT_RETRIES="-o Acquire::Retries=5"

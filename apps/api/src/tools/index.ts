@@ -188,6 +188,10 @@ export async function runTool(
       return readUpload(String(args.upload_id ?? ""), context?.ownerId);
     case "http_fetch":
       return httpFetch(String(args.url ?? ""));
+    case "load_skill": {
+      const { loadSkillTool } = await import("../skills.js");
+      return loadSkillTool(context?.ownerId, args.name);
+    }
     case "routine": {
       const { routineTool } = await import("../routines.js");
       return routineTool(context?.ownerId, context?.conversationId, context?.timeZone, args);

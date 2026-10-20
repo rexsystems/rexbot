@@ -156,6 +156,16 @@ export const ROUTINE_TOOL: ToolDefinition = {
   },
 };
 
+export const LOAD_SKILL_TOOL: ToolDefinition = {
+  name: "load_skill",
+  description: "Load the full instructions of one of the user's skills (listed in your system prompt under Skills). Load a skill before doing a task its description matches, then follow it. Don't load skills you won't use.",
+  parameters: {
+    type: "object",
+    properties: { name: { type: "string", description: "The skill name exactly as listed" } },
+    required: ["name"],
+  },
+};
+
 export interface ComputerToolOptions {
   backend?: ComputerBackendKind;
   desktop?: boolean;
@@ -163,11 +173,13 @@ export interface ComputerToolOptions {
   cursor?: boolean;
   /** Scheduled routines are available in this context (not inside a routine run). */
   routines?: boolean;
+  /** The user has skills. */
+  skills?: boolean;
 }
 
 export function toolDefinitions(options: ComputerToolOptions = {}): ToolDefinition[] {
   const computerTools = options.desktop ? [DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
-  return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : []), ...(options.routines ? [ROUTINE_TOOL] : [])];
+  return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : []), ...(options.routines ? [ROUTINE_TOOL] : []), ...(options.skills ? [LOAD_SKILL_TOOL] : [])];
 }
 
 /** Tool list for the local Podman computer; use toolDefinitions() when the backend is known. */
