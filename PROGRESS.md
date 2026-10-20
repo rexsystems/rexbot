@@ -148,9 +148,16 @@ Desktop website connections, cookie-only web authentication, dependency upgrades
 DSML parsing, guest network boundaries, and click-to-open computer controls are implemented. DSML fixes were
 pushed as `18ab9e8`. Linux DEB/RPM desktop installers build successfully. The live VM network check passed;
 the live noVNC check verified browser typing by reading a file written in the guest. The full suite passes:
-40 API tests, 14 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
+41 API tests, 15 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
 VM image. npm audits report no known vulnerabilities, and no workspace packages are outdated.
 Vision and server-side Tavily/Google settings remain future work. Deployment and boundaries: `docs/desktop.md`.
+
+The follow-up adds structured guest file editing and managed per-bot project servers, using a Python helper sent
+over SSH so existing images work without rebuilding. Live VM tests verify file edits, HTTP inspection, the browser
+window title, custom server commands, and stop/status. Node/npm are included in future templates. Live chat now
+accepts messages during active work, interrupts provider generation, skips obsolete pending tools after a running
+command finishes, and respects new group mentions. API and browser regression checks pass. The earlier DSML
+screenshot was taken before the user restarted the old app; it was not evidence of a new parser regression.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

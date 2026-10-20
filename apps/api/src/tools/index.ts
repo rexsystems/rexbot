@@ -157,12 +157,15 @@ export async function runTool(
         return `computer_exec failed: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
+    case "computer_files":
+    case "computer_project":
     case "computer_input":
     case "computer_screenshot": {
       const desktop = computer();
       if (!isDesktopComputer(desktop)) return `${name} unavailable: this computer has no screen.`;
       if (!context?.botId) return `${name} unavailable: only bots have a screen.`;
       try {
+        if (name === "computer_files" || name === "computer_project") return await desktop.workspace(context.botId, name === "computer_files" ? "files" : "project", args);
         if (name === "computer_screenshot") return await desktop.screenshot(context.botId);
         return await desktop.input(context.botId, args);
       } catch (err) {

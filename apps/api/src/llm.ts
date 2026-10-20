@@ -44,6 +44,7 @@ export async function* streamChatCompletion(opts: {
   settings: ModelSettings;
   messages: LlmMessage[];
   tools?: unknown[];
+  signal?: AbortSignal;
 }): AsyncGenerator<ChatCompletionChunk> {
   const { settings } = opts;
   const route = settings.route;
@@ -88,7 +89,7 @@ async function providerError(res: Response) {
   return new Error(`Model provider error ${res.status}: ${text.slice(0, 400)}`);
 }
 
-async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[] }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
+async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
   const { settings, messages, tools } = opts;
   const body: Record<string, unknown> = { model: settings.llmModel, messages, stream: true };
   if (tools?.length) {
@@ -100,6 +101,7 @@ async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessa
     method: "POST",
     headers: { ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}), "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal: opts.signal,
   });
   if (!res.ok) throw await providerError(res);
   for await (const { data } of sseEvents(res)) {
@@ -164,7 +166,7 @@ function anthropicHeaders(settings: ModelSettings) {
   return { "x-api-key": settings.llmApiKey, "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json" };
 }
 
-async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[] }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
+async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
   const { settings } = opts;
   const { system, messages } = toAnthropicMessages(opts.messages);
   const tools = toAnthropicTools(opts.tools);
@@ -172,6 +174,7 @@ async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMe
     method: "POST",
     headers: anthropicHeaders(settings),
     body: JSON.stringify({ model: settings.llmModel, max_tokens: ANTHROPIC_MAX_TOKENS, stream: true, ...(system ? { system } : {}), messages, ...(tools?.length ? { tools } : {}) }),
+    signal: opts.signal,
   });
   if (!res.ok) throw await providerError(res);
   // Anthropic numbers content blocks; tool calls keep that index so the caller can assemble arguments.

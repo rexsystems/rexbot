@@ -145,10 +145,11 @@ export function insertMessage(input: {
   toolCallId?: string | null;
   botId?: string;
   botName?: string;
+  createdAt?: string;
   reasoning?: { content: string; scope: string };
 }): ChatMessage {
   const id = nanoid();
-  const ts = nowIso();
+  const ts = input.createdAt ?? nowIso();
   db.prepare(
     `INSERT INTO messages (id, conversation_id, role, content, tool_name, tool_call_id, created_at, bot_id, bot_name)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,

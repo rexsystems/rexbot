@@ -48,6 +48,31 @@ const DESKTOP_INPUT: ToolDefinition = {
   },
 };
 
+const DESKTOP_FILES: ToolDefinition = {
+  name: "computer_files",
+  description: "Read and edit text files directly inside your guest workspace without shell quoting. Prefer this for project code. Paths are relative to /workspace/bots/<your id>. Actions: list a directory; read text (next_offset supports continuation); write content (up to 256 KiB); replace one exact old_text with new_text. Replacement must match exactly once. Never paste these file contents into the chat.",
+  parameters: { type: "object", properties: {
+    action: { type: "string", enum: ["list", "read", "write", "replace"] },
+    path: { type: "string", description: "Workspace-relative file or directory path" },
+    content: { type: "string", description: "Full text for write" },
+    old_text: { type: "string", description: "Exact unique text for replace" },
+    new_text: { type: "string", description: "Replacement text" },
+    offset: { type: "integer", minimum: 0, description: "Character offset for read continuation" },
+  }, required: ["action", "path"] },
+};
+
+const DESKTOP_PROJECT: ToolDefinition = {
+  name: "computer_project",
+  description: "Manage one persistent project server on your guest computer. start serves an existing directory with Python by default, or runs a command for a framework project. Server survives tool calls; start/open launches its URL in your own screen's browser so the user can interact using Take control. An available port is chosen automatically; command receives PORT and HOST=127.0.0.1, e.g. npm run dev -- --host 127.0.0.1 --port $PORT. Use computer_exec only for dependencies and builds. status/inspect check real HTTP source and logs (not rendered pixels); logs reads output; stop ends the managed process group. A guest localhost URL is not a public link and cannot be opened on the user's PC. Do not publish without authorization.",
+  parameters: { type: "object", properties: {
+    action: { type: "string", enum: ["start", "status", "inspect", "logs", "open", "stop"] },
+    directory: { type: "string", description: "For start: existing workspace-relative project directory" },
+    command: { type: "string", description: "Optional guest server command; omit for a static website" },
+    port: { type: "integer", minimum: 1024, maximum: 65535, description: "Optional fixed port, otherwise allocated automatically" },
+    path: { type: "string", description: "For inspect: local HTTP route, e.g. /contact" },
+  }, required: ["action"] },
+};
+
 const DESKTOP_SCREENSHOT: ToolDefinition = {
   name: "computer_screenshot",
   description: "Capture your Rex Computer screen. Saves a PNG in your workspace and returns its path, the screen size, the active window and the open window titles. You cannot see the pixels; use the titles and paths to plan your next action.",
@@ -178,7 +203,7 @@ export interface ComputerToolOptions {
 }
 
 export function toolDefinitions(options: ComputerToolOptions = {}): ToolDefinition[] {
-  const computerTools = options.desktop ? [DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
+  const computerTools = options.desktop ? [DESKTOP_FILES, DESKTOP_PROJECT, DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
   return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : []), ...(options.routines ? [ROUTINE_TOOL] : []), ...(options.skills ? [LOAD_SKILL_TOOL] : [])];
 }
 

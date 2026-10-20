@@ -5,6 +5,7 @@ import {
   type ClientSettings,
   type SseEvent,
   type MessageReaction,
+  type ChatMessage,
   MAX_MESSAGE_ATTACHMENTS,
   isPreviewImage,
   botReplyText,
@@ -40,6 +41,14 @@ import { skillSummaries } from "./skills.js";
 import { hasUsableModel, resolveModelSettings, type ModelSettings } from "./providers.js";
 
 export type TurnEvent = SseEvent;
+
+interface LiveTurn {
+  pending: ChatMessage[];
+  generation?: AbortController;
+  send?: (event: SseEvent) => void;
+  respondTo?: string;
+}
+const liveTurns = new Map<string, LiveTurn>();
 
 export function normalizeSettings(raw: Partial<ClientSettings> | undefined): ModelSettings {
   return {
@@ -114,7 +123,10 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
   if (!conversation) {
     conversation = createConversation(titleFromMessage(message || "Image attachments"), undefined, userId);
   }
-  if (activeChats.has(conversation.id)) return fail(409, "This conversation is already working. Wait for it to finish.");
+  const ongoing = liveTurns.get(conversation.id);
+  if (activeChats.has(conversation.id) && !ongoing) return fail(409, "This conversation is finishing. Please send again.");
+  if (ongoing && input.allowRoutines === false) return fail(409, "This conversation is already working.");
+  if (ongoing && ongoing.pending.length >= 32) return fail(409, "Too many pending messages. Wait for the bot to catch up.");
   if (body.respondTo !== undefined && typeof body.respondTo !== "string") return fail(400, "Choose a valid responding bot.");
   const responders = conversation.kind === "group" ? selectGroupResponders(conversation.memberIds ?? [], message, body.respondTo) : [conversation];
   if (!responders.length) return fail(400, "Choose a current group member, or add bots to this group before sending.");
@@ -136,6 +148,20 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
   const attachmentConversationId = conversation.id;
   db.transaction(() => { (uploadIds as string[]).forEach((id, position) => attach.run(attachmentConversationId, userMessage.id, position, id)); })();
   userMessage.attachments = messageUploads(userMessage.id);
+  if (ongoing) {
+    ongoing.respondTo = typeof body.respondTo === "string" ? body.respondTo : undefined;
+    ongoing.pending.push(userMessage);
+    ongoing.send?.({ type: "user_message", message: userMessage });
+    ongoing.generation?.abort();
+    const currentConversation = conversation;
+    return { ok: true, conversationId: conversation.id, run: async (send) => {
+      send({ type: "conversation", conversation: currentConversation });
+      send({ type: "user_message", message: userMessage });
+      send({ type: "done" });
+    } };
+  }
+  const live: LiveTurn = { pending: [] };
+  liveTurns.set(conversation.id, live);
   if (isNew) {
     touchConversation(conversation.id, titleFromMessage(message || "Image attachments"));
     conversation = getConversation(conversation.id)!;
@@ -150,6 +176,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
     ok: true,
     conversationId: conv.id,
     run: async (send) => {
+      live.send = send;
       try {
         // Persist + notify immediately so a reload already sees the user message.
         send({ type: "conversation", conversation: conv });
@@ -163,7 +190,8 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           return;
         }
         const budget = { remaining: 6 };
-        for (const [responderIndex, responder] of responders.entries()) {
+        respondersLoop: for (let responderIndex = 0; responderIndex < responders.length; responderIndex++) {
+        const responder = responders[responderIndex];
         if (!responder) continue;
         const settings = responderSettings[responderIndex]!;
         const speaker = responder.bot ? { botId: responder.id, botName: responder.bot.name } : {};
@@ -171,9 +199,12 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
         const roster = peers(responder.id, conv.kind === "group" ? conv.id : undefined);
         const tools = toOpenAiTools({ desktop: computers.desktop, cursor: hasCursor(userId), routines: input.allowRoutines !== false, skills: skills.length > 0 }).filter((tool) => tool.function.name !== "message_bot" || roster.length > 0);
         const groupContext = conv.kind === "group" ? `\nYou are in group ${JSON.stringify(conv.title)}. You were selected to answer this message. Speak only for yourself, without a speaker label. Other members' prior replies are labelled for context. Build on useful work, check claims, and avoid repeating answers. Use message_bot for a specific teammate's private help when useful; do not invent replies on their behalf. ${responders.length > 1 ? "The user explicitly requested everyone; you each get one turn, in order." : "Only one member is replying publicly to this message."}` : "";
+        const history = listMessages(conv.id);
+        const seen = new Set(history.map((item) => item.id));
+        let latestUserMessage = userMessage;
         const llmMessages: LlmMessage[] = [
           { role: "system", content: `${buildSystemPrompt(memoryBlock, responder.bot, { desktop: computers.desktop, now, skills })}${groupContext}\nAvailable teammates for message_bot: ${JSON.stringify(roster)}. Only these ids may be contacted. Share only task-relevant context. A private reply is another model's output; verify it when needed.${note}` },
-          ...historyToLlm(listMessages(conv.id), settings, responder.id),
+          ...historyToLlm(history, settings, responder.id),
         ];
         let assistantText = "";
         let assistantReasoning: string | undefined;
@@ -186,19 +217,40 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
         const maxToolRounds = 16;
 
         for (let round = 0; round < maxToolRounds; round++) {
+          if (live.pending.length && conv.kind === "group") {
+            const selected = selectGroupResponders(conv.memberIds ?? [], live.pending.at(-1)!.content, live.respondTo);
+            responders.splice(responderIndex, responders.length - responderIndex, ...selected);
+            responderSettings.splice(responderIndex, responderSettings.length - responderIndex, ...selected.map((bot) => resolveModelSettings(userId, clientSettings, bot?.bot, bot?.id)));
+            if (selected[0]?.id !== responder.id) {
+              responderIndex--;
+              continue respondersLoop;
+            }
+          }
+          for (const update of live.pending.splice(0)) {
+            latestUserMessage = update;
+            if (!seen.has(update.id)) {
+              llmMessages.push(...historyToLlm([update], settings, responder.id));
+              seen.add(update.id);
+            }
+          }
           const toolAcc = new Map<
             number,
             { id: string; name: string; arguments: string }
           >();
           let content = "";
+          const contentStartedAt = new Date().toISOString();
           let reasoning: string | undefined;
           emittedAnswer = "";
           let sawToolCalls = false;
 
+          const generation = new AbortController();
+          live.generation = generation;
+          try {
           for await (const chunk of streamChatCompletion({
             settings,
             messages: llmMessages,
-            tools,
+            tools: round === maxToolRounds - 1 ? undefined : tools,
+            signal: generation.signal,
           })) {
             const choice = chunk.choices?.[0];
             const delta = choice?.delta;
@@ -226,8 +278,26 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
               }
             }
           }
+          } catch (error) {
+            if (!generation.signal.aborted || !live.pending.length) throw error;
+          } finally {
+            live.generation = undefined;
+          }
           emitAnswer(content, true);
           assistantReasoning = reasoning;
+
+          if (live.pending.length) {
+            if (content) {
+              const partial = insertMessage({ conversationId: conv.id, role: "assistant", content: botReplyText(content, responder.bot?.name), createdAt: contentStartedAt, reasoning: reasoning === undefined ? undefined : { content: reasoning, scope: reasoningScope(settings) }, ...speaker });
+              send({ type: "message_done", messageId: partial.id });
+              llmMessages.push({ role: "assistant", content, ...responseReasoning(reasoning, settings) });
+            }
+            if (speaker.botId && speaker.botName) send({ type: "speaker", botId: speaker.botId, botName: speaker.botName });
+            assistantText = "";
+            assistantReasoning = undefined;
+            round--;
+            continue;
+          }
 
           if (!sawToolCalls || toolAcc.size === 0) {
             if (!content && !assistantText) {
@@ -266,11 +336,11 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
               tool: call.function.name,
               input: safeParse(call.function.arguments),
             });
-            const output = await runTool(
+            const output = live.pending.length ? "Skipped: the user sent a new message. Read the update before taking further actions." : await runTool(
               call.function.name,
               call.function.arguments,
               settings,
-              { userMessageId: userMessage.id, ownerId: userId, conversationId: conv.id, timeZone, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget },
+              { userMessageId: latestUserMessage.id, ownerId: userId, conversationId: conv.id, timeZone, botId: responder.bot ? responder.id : undefined, groupId: conv.kind === "group" ? conv.id : undefined, budget },
             );
             if (call.function.name === "react_message") {
               try {
@@ -288,7 +358,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
                 else if (result.exitCode !== 0) toolError = result.timedOut ? (computers.kind === "podman" ? "Command timed out; computer stopped." : "Command timed out.") : `Command exited with code ${result.exitCode}.`;
               }
             }
-            if ((call.function.name === "computer_input" || call.function.name === "computer_screenshot") && /^computer_\w+ (failed|unavailable)/.test(output)) toolError = output;
+            if (["computer_input", "computer_screenshot", "computer_files", "computer_project"].includes(call.function.name) && /^computer_\w+ (failed|unavailable)/.test(output)) toolError = output;
             send({
               type: "tool_end",
               tool: call.function.name,
@@ -314,16 +384,6 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
           // reset assistant text for final answer after tools
           assistantText = "";
           assistantReasoning = undefined;
-          if (round === maxToolRounds - 1) {
-            emittedAnswer = "";
-            for await (const chunk of streamChatCompletion({ settings, messages: llmMessages })) {
-              const reasoningPart = chunk.choices?.[0]?.delta?.reasoning_content;
-              if (typeof reasoningPart === "string") assistantReasoning = (assistantReasoning ?? "") + reasoningPart;
-              const text = chunk.choices?.[0]?.delta?.content;
-              if (text) { assistantText += text; emitAnswer(assistantText); }
-            }
-            emitAnswer(assistantText, true);
-          }
         }
 
         const saved = insertMessage({
@@ -348,6 +408,7 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
         send({ type: "done" });
       } finally {
         activeChats.delete(conv.id);
+        liveTurns.delete(conv.id);
       }
     },
   };

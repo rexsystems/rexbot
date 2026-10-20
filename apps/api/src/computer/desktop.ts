@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import net from "node:net";
+import { readFileSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
 import { COMPUTER_INPUT_ACTIONS, type ComputerInputAction, type ComputerResult, type ComputerSession, type ComputerSessionState, type ComputerStatus } from "@rex/shared";
 import type { SshRunner, TunnelOpener } from "./ssh.js";
@@ -337,6 +338,20 @@ export class DesktopComputer {
       const result = await this.guest(["input", botId], JSON.stringify(action));
       if (result.code !== 0) throw new Error(result.output || "Input failed.");
       return result.output || `${action.action} done`;
+    });
+  }
+
+  async workspace(botId: string, operation: "files" | "project", args: Record<string, unknown>): Promise<string> {
+    const payload = JSON.stringify({ bot: botId, operation, args });
+    if (Buffer.byteLength(payload) > 300_000) throw new Error("Workspace request exceeds 300 KB.");
+    return this.withBot(botId, async () => {
+      await this.ensureGuestSession(botId);
+      if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has taken control of this computer.");
+      const helper = readFileSync(new URL("../../../../scripts/guest/rex-workspace.py", import.meta.url), "utf8");
+      const input = `import json\nREQUEST = json.loads(bytes.fromhex("${Buffer.from(payload).toString("hex")}").decode())\n${helper}`;
+      const result = await this.ssh(["python3", "-"], input, 30_000);
+      if (result.timedOut || result.code !== 0) throw new Error(result.output || "Guest project operation failed.");
+      return JSON.stringify(parseJson(result.output, "workspace"));
     });
   }
 

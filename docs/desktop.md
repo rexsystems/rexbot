@@ -52,3 +52,17 @@ HTTP fetch tools also enforce the public-address boundary, even if the legacy `R
 Bots may create a relevant routine when an ongoing user task warrants follow-up. They must first list existing routines, use the least frequent useful schedule and tell the user what was scheduled. The tool also reuses identical tasks instead of creating duplicates. Routines remain scoped to their owner and chat; scheduled runs cannot create more routines. Models still determine whether to use the tool, so prompt instructions are guidance rather than a guarantee of model behavior.
 
 Scheduled work uses a model connected under Settings → Models. Browser-only fallback keys are unavailable when the browser is closed. The API must remain running for routines to execute.
+
+## Projects inside the computer
+
+Bots now have `computer_files` for listing, reading, writing, and exact text replacement in their own workspace. File contents travel as structured data over SSH, rather than being embedded in shell heredocs. Paths must resolve inside that bot's workspace. The helper runs in the guest using Python already present in existing images; no template rebuild is needed for these tools.
+
+`computer_project` starts one managed server per bot, checks its HTTP response, reads logs, opens its URL in the guest browser, and stops its process group. Static sites use Python's server without installing packages. Framework projects can provide a server command; `PORT` is allocated automatically and `HOST` is `127.0.0.1`. For example, a Vite project can use `npm run dev -- --host 127.0.0.1 --port $PORT` after dependency installation. New templates include distro Node.js/npm; bots may install missing build dependencies inside an older guest.
+
+The server runs inside the VM and survives individual tool calls. The owner sees the site on the bot's screen and interacts using Take control. Guest localhost URLs are not public links or URLs for the owner's own browser. The project server stops when its guest shuts down; source files remain. HTTP inspection reports source and status, without pretending to execute JavaScript or inspect rendered pixels.
+
+## Sending messages while a bot works
+
+The composer remains available during a reply, including attachments. New messages are saved immediately. During text generation, the server cancels that provider stream and restarts with the updated conversation; partial text already shown stays in history. During a tool command, that command finishes, remaining obsolete tool calls are skipped, and the next model round receives the update. Group mentions can select a different member while the group is working.
+
+There is one active runner per conversation, with up to 32 pending messages. Browser reloads do not cancel that runner. An API process restart still ends active work; this is not a durable job queue or a guarantee of immediate cancellation of guest processes.

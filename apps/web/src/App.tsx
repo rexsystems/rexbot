@@ -98,7 +98,7 @@ function toThread(messages: ChatMessage[]): ThreadItem[] {
   return messages.filter((message) => message.toolName !== "react_message").map((message): ThreadItem => {
     if (message.role !== "tool") return { kind: "message", message };
     const result = message.toolName === "computer_exec" ? computerResult(message.content) : null;
-    const failed = /^(computer_exec failed:|computer_(input|screenshot) (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
+    const failed = /^(computer_exec failed:|computer_(input|screenshot|files|project) (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
     return { kind: "tool", id: message.id, tool: message.toolName ?? "tool", status: failed ? "error" : "done", detail: message.content };
   });
 }
@@ -121,7 +121,7 @@ function computerResult(detail?: string): ComputerResult | null {
   } catch { return null; }
 }
 
-const toolLabels: Record<string, string> = { computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
+const toolLabels: Record<string, string> = { computer_files: "Project files", computer_project: "Project server", computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
 
 export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
@@ -147,6 +147,8 @@ export function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [listsLoaded, setListsLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | undefined>();
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const sendingMessageRef = useRef(false);
   const [thread, setThread] = useState<ThreadItem[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -401,12 +403,60 @@ export function App() {
 
   const send = async () => {
     const text = draft.trim();
-    if ((!text && !attachments.items.length) || busy || (attachments.items.length > 0 && !attachments.ready)) return;
+    if ((!text && !attachments.items.length) || sendingMessageRef.current || (attachments.items.length > 0 && !attachments.ready)) return;
     if (!providerState?.active && !settings.llmApiKey.trim()) {
       setShowSettings(true);
       setError("Connect a model provider in Settings → Models first.");
       return;
     }
+
+    if (busy && activeId) {
+      sendingMessageRef.current = true;
+      setSendingMessage(true);
+      const sentAttachments = attachments.items;
+      const uploadIds = sentAttachments.flatMap((item) => item.upload ? [item.upload.id] : []);
+      setDraft("");
+      attachments.clear(false);
+      setError(null);
+      let accepted = false;
+      let newReply = false;
+      let replySpeaker = { botId: activeConversation?.bot ? activeId : undefined, botName: activeConversation?.bot?.name };
+      const replyId = uid();
+      try {
+        await api.streamChat({ conversationId: activeId, message: text, uploadIds, settings, onEvent: (event) => {
+          if (event.type === "user_message") {
+            accepted = true;
+            setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === event.message.id) ? previous : [...previous, { kind: "message", message: event.message }]);
+          }
+          if (event.type === "error") setError(event.message);
+          if (event.type === "speaker") replySpeaker = { botId: event.botId, botName: event.botName };
+          if (event.type === "delta") {
+            newReply = true;
+            setBusy(true);
+            const speaker = replySpeaker;
+            setThread((previous) => previous.some((item) => item.kind === "message" && item.message.id === replyId)
+              ? previous.map((item) => item.kind === "message" && item.message.id === replyId ? { ...item, message: { ...item.message, content: item.message.content + event.text } } : item)
+              : [...previous, { kind: "message", message: { id: replyId, conversationId: activeId, role: "assistant", content: event.text, createdAt: new Date().toISOString(), ...speaker } }]);
+          }
+        } });
+        if (newReply) {
+          const data = await api.getConversation(activeId);
+          setThread(toThread(data.messages));
+          setBusy(Boolean(data.busy));
+          setFollowTurn(Boolean(data.busy));
+        }
+      } catch (error) {
+        if (!accepted) { setDraft((current) => current ? `${text}\n\n${current}` : text); attachments.restore(sentAttachments); }
+        setError(error instanceof Error ? error.message : String(error));
+      } finally {
+        sendingMessageRef.current = false;
+        setSendingMessage(false);
+      }
+      return;
+    }
+
+    sendingMessageRef.current = true;
+    setSendingMessage(true);
 
     setBusy(true);
     setFollowTurn(false);
@@ -469,7 +519,13 @@ export function App() {
           }
           if (ev.type === "user_message") {
             accepted = true;
-            setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === userMsg.id ? { kind: "message", message: ev.message } : item));
+            sendingMessageRef.current = false;
+            setSendingMessage(false);
+            setThread((prev) => {
+              if (prev.some((item) => item.kind === "message" && item.message.id === ev.message.id)) return prev;
+              if (prev.some((item) => item.kind === "message" && item.message.id === userMsg.id)) return prev.map((item) => item.kind === "message" && item.message.id === userMsg.id ? { kind: "message", message: ev.message } : item);
+              return [...prev, { kind: "message", message: ev.message }];
+            });
           }
           if (ev.type === "reaction") {
             setThread((prev) => prev.map((item) => item.kind === "message" && item.message.id === ev.messageId ? { ...item, message: { ...item.message, reactions: ev.reactions } } : item));
@@ -510,7 +566,7 @@ export function App() {
             );
           }
           if (ev.type === "tool_start") {
-            if (ev.tool === "computer_input" || ev.tool === "computer_screenshot") {
+            if (ev.tool === "computer_input" || ev.tool === "computer_screenshot" || ev.tool === "computer_project") {
               setComputerFocus(speaker.botId);
               if (desktopComputer) setShowComputer(true);
             }
@@ -580,7 +636,7 @@ export function App() {
     } catch (e) {
       if (!accepted) {
         attachments.restore(sentAttachments);
-        setDraft(text);
+        setDraft((current) => current ? `${text}\n\n${current}` : text);
         setThread((previous) => previous.filter((item) => item.kind !== "message" || (item.message.id !== userMsg.id && item.message.id !== assistantId)));
         setError(e instanceof Error ? e.message : String(e));
       } else {
@@ -592,6 +648,8 @@ export function App() {
         }
       }
     } finally {
+      sendingMessageRef.current = false;
+      setSendingMessage(false);
       if (!handoff) setBusy(false);
     }
   };
@@ -608,10 +666,10 @@ export function App() {
   return (
     <>
       <AppShell
-        onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; if (!busy) setDraggingFiles(true); } }}
+        onDragEnter={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current++; if (!sendingMessage && !voiceBot) setDraggingFiles(true); } }}
         onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); event.dataTransfer.dropEffect = busy ? "none" : "copy"; } }}
         onDragLeave={(event) => { if (event.dataTransfer.types.includes("Files")) { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDraggingFiles(false); } }}
-        onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!busy) { setError(null); attachments.add(Array.from(event.dataTransfer.files)); } } }}
+        onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!sendingMessage && !voiceBot) { setError(null); attachments.add(Array.from(event.dataTransfer.files)); } } }}
         className="app-shell"
         navbar={{ width: 290, breakpoint: "sm", collapsed: { mobile: !mobileNav } }}
         aside={{ width: computerWidth, breakpoint: "lg", collapsed: { desktop: !showComputer, mobile: true } }}
@@ -879,7 +937,7 @@ export function App() {
                       type="file"
                       hidden
                       multiple
-                      disabled={busy || Boolean(voiceBot)}
+                      disabled={sendingMessage || Boolean(voiceBot)}
                       onChange={(e) => { if (e.currentTarget.files?.length) { setError(null); attachments.add(Array.from(e.currentTarget.files)); } e.currentTarget.value = ""; }}
                     />
                     <Tooltip label="Attach">
@@ -887,7 +945,7 @@ export function App() {
                         size={48}
                         variant="subtle"
                         radius="xl"
-                        disabled={busy || Boolean(voiceBot)}
+                        disabled={sendingMessage || Boolean(voiceBot)}
                         onClick={() => fileRef.current?.click()}
                         aria-label="Attach files"
                       >
@@ -898,7 +956,7 @@ export function App() {
                       value={draft}
                       label={activeConversation?.kind === "group" ? `Message ${activeConversation.title}` : `Message ${activeBot.name}`}
                       members={activeConversation?.kind === "group" ? (activeConversation.memberIds ?? []).flatMap((id) => { const member = conversations.find((item) => item.id === id); return member?.bot ? [member] : []; }) : []}
-                      disabled={busy || Boolean(voiceBot)}
+                      disabled={Boolean(voiceBot)}
                       onChange={setDraft}
                       onSend={() => void send()}
                       onPaste={(event) => {
@@ -927,8 +985,8 @@ export function App() {
                         variant="filled"
                         color="ember"
                         onClick={() => void send()}
-                        disabled={busy || Boolean(voiceBot) || (!draft.trim() && !attachments.items.length) || (attachments.items.length > 0 && !attachments.ready)}
-                        loading={busy}
+                        disabled={sendingMessage || Boolean(voiceBot) || (!draft.trim() && !attachments.items.length) || (attachments.items.length > 0 && !attachments.ready)}
+                        loading={sendingMessage}
                         aria-label="Send"
                       >
                         <IconSend2 size={24} stroke={1.5} />

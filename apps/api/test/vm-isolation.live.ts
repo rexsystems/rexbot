@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { QemuHost, QemuMachine, waitForSsh } from "../src/computer/qemu.js";
 import { sshRunner } from "../src/computer/ssh.js";
 import { GUEST_PROXY } from "../src/computer/egress.js";
+import { DesktopComputer } from "../src/computer/desktop.js";
 
 test("live guest reaches public websites through the proxy and cannot reach the host", { timeout: 300_000 }, async () => {
   const backingFile = process.env.REX_TEST_VM_TEMPLATE;
@@ -36,7 +37,33 @@ test("live guest reaches public websites through the proxy and cannot reach the 
     const direct = await run(`curl --noproxy '*' -s --max-time 3 http://10.0.2.2:${hostPort}/health`);
     assert.notEqual(direct.code, 0, "direct guest-to-host traffic must fail");
     assert.equal(hostHits, 0);
+    const desktop = new DesktopComputer(machine, (args, input, timeout) => ssh(["env", `http_proxy=${GUEST_PROXY}`, `https_proxy=${GUEST_PROXY}`, ...args], input, timeout), () => { throw new Error("No screen tunnel needed in this check"); });
+    const workspace = async (operation: "files" | "project", args: Record<string, unknown>) => JSON.parse(await desktop.workspace("project-check", operation, args));
+    const original = '<!doctype html><title>Guest project check</title><h1>Before edit</h1>';
+    assert.equal((await workspace("files", { action: "write", path: "site/index.html", content: original })).saved, true);
+    assert.equal((await workspace("files", { action: "read", path: "site/index.html" })).content, original);
+    await assert.rejects(workspace("files", { action: "write", path: "../../outside.txt", content: "blocked" }), /inside this bot/);
+    const started = await workspace("project", { action: "start", directory: "site" });
+    assert.equal(started.running, true);
+    assert.equal(started.check.http_status, 200);
+    assert.equal(started.check.title, "Guest project check");
+    assert.equal(started.browser_launched, true);
+    let windows = "";
+    for (let attempt = 0; attempt < 30; attempt++) {
+      windows = (await desktop.screenshot("project-check"));
+      if (windows.includes("Guest project check")) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.match(windows, /Guest project check/, "the guest browser must load the local project");
+    await workspace("files", { action: "replace", path: "site/index.html", old_text: "Before edit", new_text: "After edit" });
+    assert.match((await workspace("project", { action: "inspect" })).check.source_excerpt, /After edit/);
+    assert.equal((await workspace("project", { action: "stop" })).running, false);
+    assert.equal((await workspace("project", { action: "status" })).running, false);
+    const custom = await workspace("project", { action: "start", directory: "site", command: "exec python3 -m http.server $PORT --bind $HOST" });
+    assert.equal(custom.check.http_status, 200);
+    await workspace("project", { action: "stop" });
     console.log("Live VM: public HTTPS works; host, private IPs, metadata and direct host access blocked.");
+    console.log("Live VM: structured file editing, browser launch, persistent static/custom servers, inspection and shutdown work.");
   } finally {
     await machine.destroy();
     canary.close();

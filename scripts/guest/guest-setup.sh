@@ -19,7 +19,7 @@ apt-get update $APT_RETRIES -o APT::Update::Error-Mode=any
 apt-get install $APT_RETRIES -y --no-install-recommends \
   openssh-server cloud-guest-utils python3 python3-pip python3-venv git curl ca-certificates \
   xvfb openbox tint2 x11vnc novnc websockify xdotool wmctrl scrot xclip x11-xserver-utils \
-  xterm chromium firefox-esr dbus-x11 procps \
+  xterm chromium firefox-esr dbus-x11 procps nodejs npm \
   fonts-dejavu-core fonts-noto-color-emoji
 
 install -m 0755 "$HERE/rex-sessiond" /usr/local/bin/rex-sessiond
