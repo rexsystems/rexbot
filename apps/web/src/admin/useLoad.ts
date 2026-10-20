@@ -6,24 +6,29 @@ export function useLoad<T>(load: () => Promise<T>, deps: unknown[], refreshMs?: 
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const request = useRef(0);
   const loader = useRef(load);
   loader.current = load;
 
   const reload = useCallback(async () => {
+    const current = ++request.current;
+    setLoading(true);
     try {
       const next = await loader.current();
+      if (current !== request.current) return;
       setData(next);
       setError(null);
     } catch (err) {
-      setError(errorText(err));
+      if (current === request.current) setError(errorText(err));
     } finally {
-      setLoading(false);
+      if (current === request.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     setLoading(true);
     void reload();
+    return () => { request.current++; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 

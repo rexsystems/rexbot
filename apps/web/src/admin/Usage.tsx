@@ -9,7 +9,8 @@ const RANGES = [{ value: "7", label: "7 days" }, { value: "30", label: "30 days"
 const exactTokens = new Intl.NumberFormat("en-US");
 const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
 
-function TokenCount({ value }: { value: number }) {
+function TokenCount({ value }: { value: number | null | undefined }) {
+  if (value == null) return <span>Not reported</span>;
   const exact = exactTokens.format(value);
   if (value < 1_000_000) return <span>{exact}</span>;
   return (
@@ -23,6 +24,13 @@ export function Usage() {
   const [days, setDays] = useState("30");
   const { data, error, loading } = useLoad(() => api.admin.usage(Number(days)), [days]);
   const totals = data ? data.daily.reduce((sum, day) => ({ messages: sum.messages + day.messages, tokens: sum.tokens + day.promptTokens + day.completionTokens }), { messages: 0, tokens: 0 }) : null;
+  const metrics = data ? data.daily.reduce((sum, day) => ({
+    requests: sum.requests + (day.requests ?? 0), toolCalls: sum.toolCalls + (day.toolCalls ?? 0),
+    reported: sum.reported + (day.cacheReportedRequests ?? 0),
+    cacheRead: day.cacheReadTokens == null ? sum.cacheRead : (sum.cacheRead ?? 0) + day.cacheReadTokens,
+    cacheWrite: day.cacheWriteTokens == null ? sum.cacheWrite : (sum.cacheWrite ?? 0) + day.cacheWriteTokens,
+    reasoning: day.reasoningTokens == null ? sum.reasoning : (sum.reasoning ?? 0) + day.reasoningTokens,
+  }), { requests: 0, toolCalls: 0, reported: 0, cacheRead: null as number | null, cacheWrite: null as number | null, reasoning: null as number | null }) : null;
   const peak = data ? Math.max(1, ...data.daily.map((day) => day.messages)) : 1;
 
   return (
@@ -47,6 +55,14 @@ export function Usage() {
               <Text size="sm" c="dimmed">{totals.tokens ? "As reported by the model providers" : "Not reported by the providers in this period"}</Text>
             </Paper>
           </SimpleGrid>
+          {metrics ? <Paper className="admin-card" withBorder radius="md" p="lg">
+            <Group gap="xl" wrap="wrap">
+              {([['Requests', metrics.requests], ['Tool calls', metrics.toolCalls], ['Cache read', metrics.cacheRead], ['Cache write', metrics.cacheWrite], ['Reasoning tokens', metrics.reasoning]] as const).map(([label, value]) => (
+                <div key={label}><Text size="sm" c="dimmed">{label}</Text><Text fw={600}><TokenCount value={value} /></Text></div>
+              ))}
+            </Group>
+            <Text size="xs" c="dimmed" mt="sm">Cache read reported on {formatNumber(metrics.reported)} of {formatNumber(metrics.requests)} requests. Cache tokens are included in input; reasoning tokens are included in output. Unreported details and older requests are left unknown.</Text>
+          </Paper> : null}
           <Paper className="admin-card" withBorder radius="md" p="lg">
             <Title order={3} size="h5" mb="xs">Messages per day</Title>
             {totals.messages === 0 ? <Text c="dimmed" size="sm">No messages in this period.</Text> : (
@@ -64,9 +80,9 @@ export function Usage() {
           </Paper>
           <Stack gap="xs">
             <Title order={3} size="h5">By user</Title>
-            <Table.ScrollContainer minWidth={560}>
+            <Table.ScrollContainer minWidth={1050}>
               <Table className="admin-table" verticalSpacing="xs">
-                <Table.Thead><Table.Tr><Table.Th>User</Table.Th><Table.Th ta="right">Messages</Table.Th><Table.Th ta="right">Prompt tokens</Table.Th><Table.Th ta="right">Completion tokens</Table.Th></Table.Tr></Table.Thead>
+                <Table.Thead><Table.Tr><Table.Th>User</Table.Th><Table.Th ta="right">Messages</Table.Th><Table.Th ta="right">Prompt tokens</Table.Th><Table.Th ta="right">Completion tokens</Table.Th><Table.Th ta="right">Cache read</Table.Th><Table.Th ta="right">Cache write</Table.Th><Table.Th ta="right">Reasoning</Table.Th><Table.Th ta="right">Tool calls</Table.Th></Table.Tr></Table.Thead>
                 <Table.Tbody>
                   {data.byUser.map((row) => (
                     <Table.Tr key={row.userId}>
@@ -74,6 +90,10 @@ export function Usage() {
                       <Table.Td ta="right">{formatNumber(row.messages)}</Table.Td>
                       <Table.Td ta="right"><TokenCount value={row.promptTokens} /></Table.Td>
                       <Table.Td ta="right"><TokenCount value={row.completionTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.cacheReadTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.cacheWriteTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.reasoningTokens} /></Table.Td>
+                      <Table.Td ta="right">{formatNumber(row.toolCalls ?? 0)}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -83,9 +103,9 @@ export function Usage() {
           <Stack gap="xs">
             <Title order={3} size="h5">By model</Title>
             {data.byModel.length === 0 ? <Text size="sm" c="dimmed">No model requests recorded in this period.</Text> : (
-              <Table.ScrollContainer minWidth={560}>
+              <Table.ScrollContainer minWidth={1050}>
                 <Table className="admin-table" verticalSpacing="xs">
-                  <Table.Thead><Table.Tr><Table.Th>Provider</Table.Th><Table.Th>Model</Table.Th><Table.Th ta="right">Requests</Table.Th><Table.Th ta="right">Prompt tokens</Table.Th><Table.Th ta="right">Completion tokens</Table.Th></Table.Tr></Table.Thead>
+                  <Table.Thead><Table.Tr><Table.Th>Provider</Table.Th><Table.Th>Model</Table.Th><Table.Th ta="right">Requests</Table.Th><Table.Th ta="right">Prompt tokens</Table.Th><Table.Th ta="right">Completion tokens</Table.Th><Table.Th ta="right">Cache read</Table.Th><Table.Th ta="right">Cache write</Table.Th><Table.Th ta="right">Reasoning</Table.Th><Table.Th ta="right">Tool calls</Table.Th></Table.Tr></Table.Thead>
                   <Table.Tbody>
                     {data.byModel.map((row) => (
                       <Table.Tr key={`${row.provider}/${row.model}`}>
@@ -94,6 +114,10 @@ export function Usage() {
                         <Table.Td ta="right">{formatNumber(row.requests)}</Table.Td>
                         <Table.Td ta="right"><TokenCount value={row.promptTokens} /></Table.Td>
                         <Table.Td ta="right"><TokenCount value={row.completionTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.cacheReadTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.cacheWriteTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.reasoningTokens} /></Table.Td>
+                      <Table.Td ta="right">{formatNumber(row.toolCalls ?? 0)}</Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>

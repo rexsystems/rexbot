@@ -60,8 +60,21 @@ test("admins manage accounts and settings; the last admin can't lock everyone ou
     assert.equal(settings.json.workspaceName, "Team Rex");
     assert.equal((await call("/auth/state")).json.signupOpen, true);
 
+    db.prepare("INSERT INTO usage_events (user_id, provider, model, prompt_tokens, completion_tokens, tool_calls, created_at, cache_read_tokens, cache_write_tokens, reasoning_tokens) VALUES (?, 'custom', 'usage-fixture', 100, 20, 2, ?, 80, 0, 12)").run(created.json.id, new Date().toISOString());
+    db.prepare("INSERT INTO usage_events (user_id, provider, model, prompt_tokens, completion_tokens, tool_calls, created_at) VALUES (?, 'custom', 'usage-fixture', 50, 10, 1, ?)").run(created.json.id, new Date().toISOString());
     const usage = await call("/admin/usage?days=7", { cookie: admin.cookie });
     assert.equal(usage.json.daily.length, 7);
+    const modelUsage = usage.json.byModel.find((row: any) => row.model === "usage-fixture");
+    assert.equal(modelUsage.promptTokens, 150);
+    assert.equal(modelUsage.cacheReadTokens, 80);
+    assert.equal(modelUsage.cacheWriteTokens, 0);
+    assert.equal(modelUsage.reasoningTokens, 12);
+    assert.equal(modelUsage.toolCalls, 3);
+    assert.equal(modelUsage.requests, 2);
+    assert.equal(modelUsage.cacheReportedRequests, 1);
+    assert.equal(usage.json.byUser.find((row: any) => row.userId === created.json.id).cacheReadTokens, 80);
+    assert.equal(usage.json.daily.at(-1).cacheReadTokens, 80);
+    assert.equal(usage.json.daily[0].cacheReadTokens, null);
 
     assert.equal((await call(`/admin/users/${created.json.id}`, { method: "DELETE", cookie: admin.cookie })).status, 200);
     assert.equal((db.prepare("SELECT COUNT(*) AS n FROM conversations").get() as { n: number }).n, 0);

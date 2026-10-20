@@ -1,3 +1,4 @@
+import { mergeUsage, type UsageCounters, type ProviderUsage } from "./usage.js";
 import { providerInfo, type ClientSettings } from "@rex/shared";
 import { recordUsage, type ModelSettings } from "./providers.js";
 import { normalizeToolMarkup } from "./dsml.js";
@@ -53,7 +54,7 @@ export async function* streamChatCompletion(opts: {
   if (!settings.llmApiKey.trim() && (!route || route.provider === "client" || providerInfo(route.provider).keyRequired)) {
     throw new Error("No model is connected. Add a provider in Settings → Models.");
   }
-  const usage = { prompt: 0, completion: 0 };
+  const usage: UsageCounters = { prompt: 0, completion: 0 };
   let toolCalls = 0;
   const input = { ...opts, messages: recentImageMessages(opts.messages) };
   const source = route?.kind === "anthropic" ? streamAnthropic(input, usage) : streamOpenAi(input, usage);
@@ -92,7 +93,7 @@ async function providerError(res: Response) {
   return new Error(`Model provider error ${res.status}: ${text.slice(0, 400)}`);
 }
 
-async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
+async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: UsageCounters): AsyncGenerator<ChatCompletionChunk> {
   const { settings, messages, tools } = opts;
   const body: Record<string, unknown> = { model: settings.llmModel, messages: openAiMessages(messages), stream: true };
   if (tools?.length) {
@@ -109,11 +110,10 @@ async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessa
   if (!res.ok) throw await providerError(res);
   for await (const { data } of sseEvents(res)) {
     if (data === "[DONE]") return;
-    let chunk: ChatCompletionChunk & { usage?: { prompt_tokens?: number; completion_tokens?: number } | null };
+    let chunk: ChatCompletionChunk & { usage?: ProviderUsage | null };
     try { chunk = JSON.parse(data); } catch { continue; }
     if (chunk.usage) {
-      usage.prompt = chunk.usage.prompt_tokens ?? usage.prompt;
-      usage.completion = chunk.usage.completion_tokens ?? usage.completion;
+      mergeUsage(usage, chunk.usage);
     }
     yield chunk;
   }
@@ -170,7 +170,7 @@ function anthropicHeaders(settings: ModelSettings) {
   return { "x-api-key": settings.llmApiKey, "anthropic-version": ANTHROPIC_VERSION, "Content-Type": "application/json" };
 }
 
-async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
+async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: UsageCounters): AsyncGenerator<ChatCompletionChunk> {
   const { settings } = opts;
   const { system, messages } = toAnthropicMessages(opts.messages);
   const tools = toAnthropicTools(opts.tools);
@@ -185,8 +185,8 @@ async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMe
   for await (const { data } of sseEvents(res)) {
     let event: {
       type?: string; index?: number;
-      message?: { usage?: { input_tokens?: number; output_tokens?: number } };
-      usage?: { output_tokens?: number };
+      message?: { usage?: ProviderUsage };
+      usage?: ProviderUsage;
       content_block?: { type?: string; id?: string; name?: string };
       delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string };
       error?: { message?: string };
@@ -194,10 +194,9 @@ async function* streamAnthropic(opts: { settings: ModelSettings; messages: LlmMe
     try { event = JSON.parse(data); } catch { continue; }
     if (event.type === "error") throw new Error(`Anthropic error: ${event.error?.message ?? "unknown"}`);
     if (event.type === "message_start") {
-      usage.prompt = event.message?.usage?.input_tokens ?? 0;
-      usage.completion = event.message?.usage?.output_tokens ?? 0;
+      mergeUsage(usage, event.message?.usage, true);
     } else if (event.type === "message_delta") {
-      if (event.usage?.output_tokens !== undefined) usage.completion = event.usage.output_tokens;
+      mergeUsage(usage, event.usage, true);
       if (event.delta?.stop_reason) yield { choices: [{ delta: {}, finish_reason: event.delta.stop_reason === "tool_use" ? "tool_calls" : "stop" }] };
     } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use") {
       yield { choices: [{ delta: { tool_calls: [{ index: event.index ?? 0, id: event.content_block.id, type: "function", function: { name: event.content_block.name, arguments: "" } }] } }] };
@@ -279,8 +278,8 @@ export async function completeJson(opts: {
       body: JSON.stringify({ model: opts.settings.llmModel, max_tokens: 2048, temperature: 0.2, system: opts.system, messages: [{ role: "user", content: opts.user }] }),
     });
     if (!res.ok) throw await providerError(res);
-    const json = await res.json() as { content?: Array<{ type: string; text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
-    recordUsage(opts.settings.route, opts.settings.llmModel, { prompt: json.usage?.input_tokens ?? 0, completion: json.usage?.output_tokens ?? 0 }, 0);
+    const json = await res.json() as { content?: Array<{ type: string; text?: string }>; usage?: ProviderUsage };
+    recordUsage(opts.settings.route, opts.settings.llmModel, mergeUsage({ prompt: 0, completion: 0 }, json.usage, true), 0);
     return json.content?.filter((block) => block.type === "text").map((block) => block.text ?? "").join("") ?? "";
   }
   const res = await fetch(`${baseUrl(opts.settings)}/chat/completions`, {
@@ -304,8 +303,8 @@ export async function completeJson(opts: {
   }
   const json = (await res.json()) as {
     choices: Array<{ message?: { content?: string } }>;
-    usage?: { prompt_tokens?: number; completion_tokens?: number };
+    usage?: ProviderUsage;
   };
-  recordUsage(opts.settings.route, opts.settings.llmModel, { prompt: json.usage?.prompt_tokens ?? 0, completion: json.usage?.completion_tokens ?? 0 }, 0);
+  recordUsage(opts.settings.route, opts.settings.llmModel, mergeUsage({ prompt: 0, completion: 0 }, json.usage), 0);
   return json.choices[0]?.message?.content ?? "";
 }

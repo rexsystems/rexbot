@@ -291,10 +291,14 @@ export function App() {
     setThreadWindow((count) => Math.min(thread.length, count + THREAD_WINDOW));
   }, [hiddenThreadCount, thread.length]);
 
+  const navigationRequest = useRef(0);
   const openConversation = useCallback(async (id: string, opts?: { history?: "push" | "replace" | "none" }) => {
     setError(null);
     attachments.clear();
+    const request = ++navigationRequest.current;
     const data = await api.getConversation(id);
+    if (request !== navigationRequest.current) return;
+    activeIdRef.current = id;
     setActiveId(id);
     setThreadWindow(THREAD_WINDOW);
     setThread(toThread(data.messages));
@@ -308,9 +312,11 @@ export function App() {
     setMobileNav(false);
     const history = opts?.history ?? "push";
     if (history !== "none") syncUrl(conversationPath(data.conversation), history);
-  }, [attachments]);
+  }, [attachments.clear]);
 
   const goHome = useCallback((history: "push" | "replace" = "push") => {
+    navigationRequest.current++;
+    activeIdRef.current = undefined;
     setActiveId(undefined);
     setThread([]);
     setThreadWindow(THREAD_WINDOW);
@@ -321,7 +327,7 @@ export function App() {
     setError(null);
     setMobileNav(false);
     syncUrl("/app", history);
-  }, [attachments]);
+  }, [attachments.clear]);
 
   // Follow background turns, including scheduled routines and work resumed after reload.
   useEffect(() => {
@@ -331,7 +337,7 @@ export function App() {
     const pull = async () => {
       try {
         const data = await api.getConversation(activeId);
-        if (cancelled) return;
+        if (cancelled || activeIdRef.current !== activeId) return;
         const next = toThread(data.messages);
         setThread((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
         if (data.busy) {
@@ -382,6 +388,8 @@ export function App() {
     function onPopState() {
       const route = parseAppPath(window.location.pathname);
       if (route.kind === "app" || route.kind === "landing") {
+        navigationRequest.current++;
+        activeIdRef.current = undefined;
         setActiveId(undefined);
         setThread([]);
         attachments.clear();
@@ -453,6 +461,7 @@ export function App() {
         } });
         if (newReply && viewingQueue()) {
           const data = await api.getConversation(queueForId);
+          if (!viewingQueue()) return;
           setThread(toThread(data.messages));
           setBusy(Boolean(data.busy));
           setFollowTurn(Boolean(data.busy));
@@ -667,7 +676,10 @@ export function App() {
           }
         },
       });
-      if (conversationId && viewingStream()) setThread(toThread((await api.getConversation(conversationId)).messages));
+      if (conversationId && viewingStream()) {
+        const data = await api.getConversation(conversationId);
+        if (viewingStream()) setThread(toThread(data.messages));
+      }
       await refreshLists();
     } catch (e) {
       if (!accepted) {
@@ -680,7 +692,7 @@ export function App() {
         handoff = true;
         setFollowTurn(true);
         if (conversationId) {
-          void api.getConversation(conversationId).then((data) => setThread(toThread(data.messages))).catch(() => undefined);
+          void api.getConversation(conversationId).then((data) => { if (viewingStream()) setThread(toThread(data.messages)); }).catch(() => undefined);
         }
       }
     } finally {
@@ -948,7 +960,7 @@ export function App() {
                     onClose={() => {
                       const id = voiceBot.id;
                       setVoiceBot(null);
-                      void api.getConversation(id).then((data) => setThread(toThread(data.messages))).catch((err) => setError(String(err)));
+                      void api.getConversation(id).then((data) => { if (activeIdRef.current === id) setThread(toThread(data.messages)); }).catch((err) => { if (activeIdRef.current === id) setError(String(err)); });
                       void refreshLists().catch((err) => setError(String(err)));
                     }}
                   />

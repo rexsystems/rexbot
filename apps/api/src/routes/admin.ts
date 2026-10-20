@@ -190,12 +190,14 @@ adminRoutes.get("/admin/usage", (c) => {
   const days = Math.min(365, Math.max(1, Number.parseInt(c.req.query("days") ?? "30", 10) || 30));
   const from = since(days * DAY);
   const messages = db.prepare(`SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM messages WHERE role IN ('user', 'assistant') AND created_at >= ? GROUP BY day`).all(from) as Array<{ day: string; n: number }>;
-  const tokens = db.prepare(`SELECT substr(created_at, 1, 10) AS day, SUM(prompt_tokens) AS p, SUM(completion_tokens) AS o FROM usage_events WHERE created_at >= ? GROUP BY day`).all(from) as Array<{ day: string; p: number; o: number }>;
+  const details = `COUNT(*) AS requests, SUM(tool_calls) AS toolCalls, SUM(cache_read_tokens) AS cacheReadTokens, SUM(cache_write_tokens) AS cacheWriteTokens, SUM(reasoning_tokens) AS reasoningTokens, COUNT(cache_read_tokens) AS cacheReportedRequests`;
+  const empty = { requests: 0, toolCalls: 0, cacheReadTokens: null, cacheWriteTokens: null, reasoningTokens: null, cacheReportedRequests: 0 };
+  const tokens = db.prepare(`SELECT substr(created_at, 1, 10) AS day, SUM(prompt_tokens) AS promptTokens, SUM(completion_tokens) AS completionTokens, ${details} FROM usage_events WHERE created_at >= ? GROUP BY day`).all(from) as AdminUsage["daily"];
   const daily: AdminUsage["daily"] = [];
   for (let index = days - 1; index >= 0; index -= 1) {
     const day = new Date(Date.now() - index * DAY).toISOString().slice(0, 10);
     const tokenRow = tokens.find((row) => row.day === day);
-    daily.push({ day, messages: messages.find((row) => row.day === day)?.n ?? 0, promptTokens: tokenRow?.p ?? 0, completionTokens: tokenRow?.o ?? 0 });
+    daily.push({ ...empty, promptTokens: 0, completionTokens: 0, ...tokenRow, day, messages: messages.find((row) => row.day === day)?.n ?? 0 });
   }
   const byUser = db.prepare(`
     SELECT u.id AS userId, u.name, u.email,
@@ -204,8 +206,10 @@ adminRoutes.get("/admin/usage", (c) => {
       COALESCE((SELECT SUM(completion_tokens) FROM usage_events WHERE user_id = u.id AND created_at >= @from), 0) AS completionTokens
     FROM users u ORDER BY messages DESC, u.created_at
   `).all({ from }) as AdminUsage["byUser"];
+  const userDetails = db.prepare(`SELECT user_id AS userId, ${details} FROM usage_events WHERE created_at >= ? GROUP BY user_id`).all(from) as Array<AdminUsage["byUser"][number]>;
+  for (const row of byUser) Object.assign(row, empty, userDetails.find((item) => item.userId === row.userId));
   const byModel = db.prepare(`
-    SELECT provider, model, COUNT(*) AS requests, SUM(prompt_tokens) AS promptTokens, SUM(completion_tokens) AS completionTokens
+    SELECT provider, model, ${details}, SUM(prompt_tokens) AS promptTokens, SUM(completion_tokens) AS completionTokens
     FROM usage_events WHERE created_at >= ? GROUP BY provider, model ORDER BY requests DESC
   `).all(from) as AdminUsage["byModel"];
   const usage: AdminUsage = { days, daily, byUser, byModel };

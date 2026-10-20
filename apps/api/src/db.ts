@@ -216,3 +216,8 @@ export function claimLegacyData(userId: string) {
     db.prepare("UPDATE vms SET owner_id = ? WHERE owner_id = 'local' AND NOT EXISTS (SELECT 1 FROM vms WHERE owner_id = ?)").run(userId, userId);
   })();
 }
+
+const usageColumns = db.prepare("PRAGMA table_info(usage_events)").all() as Array<{ name: string }>;
+for (const column of ["cache_read_tokens", "cache_write_tokens", "reasoning_tokens"]) {
+  if (!usageColumns.some((entry) => entry.name === column)) db.exec(`ALTER TABLE usage_events ADD COLUMN ${column} INTEGER`);
+}

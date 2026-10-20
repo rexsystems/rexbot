@@ -176,7 +176,21 @@ export async function runTool(
       if (!isDesktopComputer(desktop)) return `${name} unavailable: this computer has no screen.`;
       if (!context?.botId) return `${name} unavailable: only bots have a screen.`;
       try {
-        if (name === "computer_files" || name === "computer_project" || name === "computer_browser") return await desktop.workspace(context.botId, name === "computer_files" ? "files" : name === "computer_browser" ? "browser" : "project", args);
+        const observe = async (output: string, always = false) => {
+          let result: Record<string, unknown>;
+          try { result = JSON.parse(output); } catch { if (!always) return output; result = { result: output }; }
+          if (!result || result.error || (!always && result.browser_launched !== true) || !context.onImage) return output;
+          try {
+            const image = await desktop.image(context.botId!);
+            const pixels = modelImage(image.bytes);
+            if (pixels) context.onImage(pixels);
+            result.observation = { path: image.path, pixels_included: !!pixels, note: "Current screen after the action. Inspect it before continuing; if still loading, capture again. Launching a browser does not prove the page loaded." };
+          } catch (error) {
+            result.observation = { pixels_included: false, error: error instanceof Error ? error.message : String(error) };
+          }
+          return JSON.stringify(result);
+        };
+        if (name === "computer_files" || name === "computer_project" || name === "computer_browser") return observe(await desktop.workspace(context.botId, name === "computer_files" ? "files" : name === "computer_browser" ? "browser" : "project", args));
         if (name === "computer_screenshot") {
           if (args.share !== undefined && typeof args.share !== "boolean") return "computer_screenshot failed: share must be a boolean.";
           if (args.inspect !== undefined && typeof args.inspect !== "boolean") return "computer_screenshot failed: inspect must be a boolean.";
@@ -203,7 +217,7 @@ export async function runTool(
           if (args.path !== undefined) return "computer_screenshot failed: set share=true to attach a saved image.";
           return await desktop.screenshot(context.botId);
         }
-        return await desktop.input(context.botId, args);
+        return observe(await desktop.input(context.botId, args), true);
       } catch (err) {
         return `${name} failed: ${err instanceof Error ? err.message : String(err)}`;
       }

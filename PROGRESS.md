@@ -229,3 +229,13 @@ workflow evidence checks, not a guarantee of a model's visual judgment or fideli
   (`https://api.cursor.com/v1/agents`) and `@cursor/sdk`. These run Cursor *agents* (repo work), not a chat-completions
   model API, so Cursor fits as a tool ("delegate this coding task to a Cursor agent"), not as a chat provider.
 - No scraping or reuse of consumer session cookies anywhere.
+
+### 2026-10-21 — Automatic visual feedback, usage accounting and stale UI responses
+
+Browser/project opening and successful guest input now attach screen pixels automatically for vision connections, without stealing owner control. Website workflow checks recognize those observations; sharing the final screenshot remains required. Capture failures preserve the action result and report the missing observation.
+
+Usage persists cache read/write and reasoning counters across streaming and nonstreaming providers, adds tool-call/request reporting and preserves unknown legacy values. Anthropic cached inputs are counted in total input; OpenAI/DeepSeek cached input is not counted twice. Admin tables and totals display the details and cache reporting coverage.
+
+Conversation navigation and stream refreshes reject responses belonging to a previous conversation. Stable attachment cleanup prevents the deep-link loader from continuously restarting. Admin loading rejects stale range responses.
+
+Validation: 49 API tests, four Playwright usage/questions/realtime tests, live VM isolation/browser/project test, typecheck and build passed. Mobile Usage screenshot inspected. Existing unrelated provider changes were preserved separately; no paid provider quality evaluation was performed.

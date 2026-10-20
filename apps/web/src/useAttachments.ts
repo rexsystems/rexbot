@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isPreviewImage, MAX_MESSAGE_ATTACHMENTS, MAX_UPLOAD_BYTES, type UploadMeta } from "@rex/shared";
 import * as api from "./api";
 
@@ -58,11 +58,11 @@ export function useAttachments(onError: (message: string) => void) {
     replace(current.current.map((entry) => entry.id === id ? { ...entry, status: "uploading", error: undefined } : entry));
     void upload(item);
   }
-  function clear(discard = true) {
+  const clear = useCallback((discard = true) => {
     const previous = current.current;
     replace([]);
     for (const item of previous) release(item, discard);
-  }
+  }, []);
   function restore(previous: DraftAttachment[]) {
     replace(previous.map((item) => ({ ...item, preview: isPreviewImage(item.file.type) ? URL.createObjectURL(item.file) : undefined })));
   }

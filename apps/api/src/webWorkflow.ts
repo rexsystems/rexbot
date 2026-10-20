@@ -53,6 +53,11 @@ export class WebWorkflow {
       if (result.browser_launched === true) { this.preview = true; this.screen = "project"; }
       if (result.running === false) { this.preview = false; this.captured = false; this.shared = false; }
     }
+    const observation = result.observation as Args | undefined;
+    if (observation?.pixels_included === true) {
+      if (this.screen && this.references.has(this.screen)) this.inspected.add(this.screen);
+      if (this.screen === "project" && this.healthy && this.edited) this.captured = true;
+    }
     if (name === "computer_screenshot" && !args.path && (result.path || result.shared || result.pixels_included)) {
       if (this.screen && this.references.has(this.screen) && (!this.vision || result.pixels_included === true)) this.inspected.add(this.screen);
       if (this.screen === "project" && this.healthy && this.edited) {

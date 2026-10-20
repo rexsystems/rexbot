@@ -1,3 +1,4 @@
+import type { UsageCounters } from "./usage.js";
 import { lookup } from "node:dns/promises";
 import { nanoid } from "nanoid";
 import {
@@ -200,8 +201,8 @@ export async function listModels(userId: string, input: { connectionId?: unknown
   return models.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function recordUsage(route: ModelRoute | undefined, model: string, usage: { prompt: number; completion: number }, toolCalls: number) {
+export function recordUsage(route: ModelRoute | undefined, model: string, usage: UsageCounters, toolCalls: number) {
   if (!route?.userId) return;
-  db.prepare("INSERT INTO usage_events (user_id, bot_id, provider, model, prompt_tokens, completion_tokens, tool_calls, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .run(route.userId, route.botId ?? null, route.provider, model, usage.prompt, usage.completion, toolCalls, nowIso());
+  db.prepare("INSERT INTO usage_events (user_id, bot_id, provider, model, prompt_tokens, completion_tokens, tool_calls, created_at, cache_read_tokens, cache_write_tokens, reasoning_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(route.userId, route.botId ?? null, route.provider, model, usage.prompt, usage.completion, toolCalls, nowIso(), usage.cacheRead ?? null, usage.cacheWrite ?? null, usage.reasoning ?? null);
 }

@@ -311,11 +311,20 @@ export interface AdminComputer {
   lastStartedAt: string | null;
 }
 
+export interface UsageDetails {
+  requests: number;
+  toolCalls: number;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  reasoningTokens: number | null;
+  cacheReportedRequests: number;
+}
+
 export interface AdminUsage {
   days: number;
-  daily: Array<{ day: string; messages: number; promptTokens: number; completionTokens: number }>;
-  byUser: Array<{ userId: string; name: string; email: string; messages: number; promptTokens: number; completionTokens: number }>;
-  byModel: Array<{ provider: string; model: string; requests: number; promptTokens: number; completionTokens: number }>;
+  daily: Array<UsageDetails & { day: string; messages: number; promptTokens: number; completionTokens: number }>;
+  byUser: Array<UsageDetails & { userId: string; name: string; email: string; messages: number; promptTokens: number; completionTokens: number }>;
+  byModel: Array<UsageDetails & { provider: string; model: string; requests: number; promptTokens: number; completionTokens: number }>;
 }
 
 /** When a routine runs. Days are 0 (Sunday) to 6; an empty or missing list means every day. */
