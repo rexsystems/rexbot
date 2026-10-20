@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { RexComputer } from "../src/computer.js";
 
+function hasPodman() {
+  try { execFileSync("podman", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }
+}
+
 test("rootless computer isolates files, resources and networking", { timeout: 45_000, skip: !hasPodman() && "Podman is not installed" }, async () => {
   const name = `rex-computer-test-${process.pid}`;
   const computer = new RexComputer(name);
