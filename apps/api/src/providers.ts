@@ -13,6 +13,8 @@ export interface ModelRoute {
   kind: ProviderKind;
   provider: ProviderId | "client";
   streamUsage: boolean;
+  /** Send image attachments as images. */
+  vision?: boolean;
   userId?: string;
   botId?: string;
 }
@@ -28,6 +30,7 @@ interface ConnectionRow {
   api_key: string | null;
   key_hint: string | null;
   default_model: string;
+  vision: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -35,7 +38,7 @@ interface ConnectionRow {
 function toConnection(row: ConnectionRow): ProviderConnection {
   return {
     id: row.id, provider: providerInfo(row.provider).id, label: row.label, baseUrl: row.base_url, keyHint: row.key_hint,
-    defaultModel: row.default_model, createdAt: row.created_at, updatedAt: row.updated_at,
+    defaultModel: row.default_model, vision: row.vision === null ? providerInfo(row.provider).vision : row.vision === 1, createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
@@ -102,7 +105,7 @@ export async function assertProviderUrlAllowed(baseUrl: string, role: UserRole) 
   if (addresses.some((entry) => !isPublicAddress(entry.address))) throw new Error("Only admins can connect providers on private or local addresses.");
 }
 
-export async function saveConnection(userId: string, role: UserRole, input: { id?: unknown; provider?: unknown; label?: unknown; baseUrl?: unknown; apiKey?: unknown; defaultModel?: unknown }): Promise<ProviderConnection> {
+export async function saveConnection(userId: string, role: UserRole, input: { id?: unknown; provider?: unknown; label?: unknown; baseUrl?: unknown; apiKey?: unknown; defaultModel?: unknown; vision?: unknown }): Promise<ProviderConnection> {
   const existing = typeof input.id === "string" ? connectionRow(userId, input.id) : undefined;
   if (typeof input.id === "string" && !existing) throw new Error("Connection not found.");
   const info = providerInfo(typeof input.provider === "string" ? input.provider : existing?.provider ?? "custom");
@@ -115,15 +118,16 @@ export async function saveConnection(userId: string, role: UserRole, input: { id
   if (info.keyRequired && keepKey && !existing?.api_key) throw new Error(`Paste your ${info.name} API key.`);
   const label = typeof input.label === "string" && input.label.trim() ? input.label.trim().slice(0, 60) : existing?.label ?? info.name;
   const defaultModel = typeof input.defaultModel === "string" ? input.defaultModel.trim().slice(0, 200) : existing?.default_model ?? "";
+  const vision = typeof input.vision === "boolean" ? (input.vision ? 1 : 0) : existing?.vision ?? null;
   const ts = nowIso();
   const id = existing?.id ?? nanoid(12);
   const apiKey = keepKey ? existing?.api_key ?? null : encryptSecret(newKey);
   const keyHint = keepKey ? existing?.key_hint ?? null : secretHint(newKey);
-  db.prepare(`INSERT INTO provider_connections (id, user_id, provider, label, base_url, api_key, key_hint, default_model, created_at, updated_at)
-    VALUES (@id, @user_id, @provider, @label, @base_url, @api_key, @key_hint, @default_model, @created_at, @updated_at)
+  db.prepare(`INSERT INTO provider_connections (id, user_id, provider, label, base_url, api_key, key_hint, default_model, vision, created_at, updated_at)
+    VALUES (@id, @user_id, @provider, @label, @base_url, @api_key, @key_hint, @default_model, @vision, @created_at, @updated_at)
     ON CONFLICT(id) DO UPDATE SET provider = excluded.provider, label = excluded.label, base_url = excluded.base_url, api_key = excluded.api_key,
-      key_hint = excluded.key_hint, default_model = excluded.default_model, updated_at = excluded.updated_at`).run({
-    id, user_id: userId, provider: info.id, label, base_url: baseUrl, api_key: apiKey, key_hint: keyHint, default_model: defaultModel,
+      key_hint = excluded.key_hint, default_model = excluded.default_model, vision = excluded.vision, updated_at = excluded.updated_at`).run({
+    id, user_id: userId, provider: info.id, label, base_url: baseUrl, api_key: apiKey, key_hint: keyHint, default_model: defaultModel, vision,
     created_at: existing?.created_at ?? ts, updated_at: ts,
   });
   return toConnection(connectionRow(userId, id)!);
@@ -136,13 +140,13 @@ export function deleteConnection(userId: string, id: string): boolean {
   return result.changes > 0;
 }
 
-interface Target { kind: ProviderKind; provider: ProviderId; baseUrl: string; apiKey: string; streamUsage: boolean }
+interface Target { kind: ProviderKind; provider: ProviderId; baseUrl: string; apiKey: string; streamUsage: boolean; vision: boolean }
 
 function target(row: ConnectionRow): Target {
   const info = providerInfo(row.provider);
   const apiKey = row.api_key ? decryptSecret(row.api_key) : "";
   if (apiKey === null) throw new Error(`The saved ${info.name} key can't be read any more (the server's secret key changed). Paste it again in Settings → Models.`);
-  return { kind: info.kind, provider: info.id, baseUrl: row.base_url, apiKey, streamUsage: info.streamUsage };
+  return { kind: info.kind, provider: info.id, baseUrl: row.base_url, apiKey, streamUsage: info.streamUsage, vision: toConnection(row).vision };
 }
 
 /**
@@ -156,7 +160,7 @@ export function resolveModelSettings(userId: string, base: ClientSettings, bot?:
     const t = target(row);
     return {
       ...base, llmApiKey: t.apiKey, llmBaseUrl: t.baseUrl, llmModel: choice.model,
-      route: { kind: t.kind, provider: t.provider, streamUsage: t.streamUsage, userId, botId },
+      route: { kind: t.kind, provider: t.provider, streamUsage: t.streamUsage, vision: t.vision, userId, botId },
     };
   }
   if (!base.llmApiKey) throw new Error("Connect a model provider in Settings → Models first.");

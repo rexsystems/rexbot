@@ -205,6 +205,11 @@ for (const table of ["conversations", "memories", "uploads"]) {
 }
 
 /** Gives every unowned row (and the pre-account computer) to this user. Runs when the first admin is created. */
+// Added after provider_connections shipped: NULL means "use the provider's default".
+if (!(db.prepare("PRAGMA table_info(provider_connections)").all() as Array<{ name: string }>).some((column) => column.name === "vision")) {
+  db.exec("ALTER TABLE provider_connections ADD COLUMN vision INTEGER");
+}
+
 export function claimLegacyData(userId: string) {
   db.transaction(() => {
     for (const table of ["conversations", "memories", "uploads"]) db.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id IS NULL`).run(userId);
