@@ -20,7 +20,6 @@ import {
   Avatar,
   Menu,
 } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import {
   IconBotAdd,
   IconPaperclip,
@@ -33,14 +32,12 @@ import {
   IconX,
   IconComputer,
   IconMenu,
-  IconBrain,
   IconClock,
   IconCustomize,
   IconGroup,
   IconPlus,
   IconChevronDown,
   IconMic,
-  IconLink,
   IconAccount,
   IconAdmin,
   IconLogout,
@@ -49,7 +46,6 @@ import type {
   ChatMessage,
   ClientSettings,
   Conversation,
-  MemoryItem,
   ComputerResult,
 } from "@rex/shared";
 import * as api from "./api";
@@ -74,7 +70,7 @@ import { MentionInput } from "./MentionInput";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 import { startActivityPulse, stopActivityPulse } from "./uiSounds";
-import { absoluteUrl, conversationPath, parseAppPath, syncUrl } from "./routes";
+import { conversationPath, parseAppPath, syncUrl } from "./routes";
 
 const ICON_LG = 18;
 const THREAD_WINDOW = 40;
@@ -135,23 +131,27 @@ export function App() {
   useEffect(() => { api.providers.state().then(setProviderState).catch(() => undefined); }, []);
   const session = useSession();
   const [showComputer, setShowComputer] = useState(false);
-  const [computerHasDesktop, setComputerHasDesktop] = useState(false);
+  const [computerWidth, setComputerWidth] = useState(() => {
+    try { return Math.min(600, Math.max(320, Number(localStorage.getItem("rex.computerWidth")) || 460)); }
+    catch { return 460; }
+  });
+  const [resizingComputer, setResizingComputer] = useState(false);
   const [computerFocus, setComputerFocus] = useState<string | undefined>();
   const [botEditor, setBotEditor] = useState<Conversation | "new" | null>(null);
   const [groupEditor, setGroupEditor] = useState<Conversation | "new" | null>(null);
   const [voiceBot, setVoiceBot] = useState<Conversation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const desktopComputer = useMediaQuery("(min-width: 75em)");
-  const [showMemory, setShowMemory] = useState(false);
   const [showRoutines, setShowRoutines] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [listsLoaded, setListsLoaded] = useState(false);
   const [activeId, setActiveId] = useState<string | undefined>();
   const [thread, setThread] = useState<ThreadItem[]>([]);
-  const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  /** True when we rejoined a turn that kept running after a reload/tab leave. */
+  const [followTurn, setFollowTurn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const attachments = useAttachments(setError);
   const [draggingFiles, setDraggingFiles] = useState(false);
@@ -193,7 +193,6 @@ export function App() {
   useEffect(() => {
     api.computerStatus().then((status) => {
       if (!status.desktop) return;
-      setComputerHasDesktop(true);
       if (window.matchMedia("(min-width: 75em)").matches) setShowComputer(true);
       if (status.available && !status.running) void api.startComputer().catch(() => undefined);
     }).catch(() => undefined);
@@ -203,7 +202,7 @@ export function App() {
   useEffect(() => {
     function onEscape(event: KeyboardEvent) {
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      if (event.key === "Escape" && !botEditor && !showSettings && !showMemory && !showRoutines) {
+      if (event.key === "Escape" && !botEditor && !showSettings && !showRoutines) {
         if (voiceBot) { setVoiceBot(null); return; }
         setShowComputer(false);
         setMobileNav(false);
@@ -211,7 +210,29 @@ export function App() {
     }
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [botEditor, showSettings, showMemory, showRoutines, voiceBot]);
+  }, [botEditor, showSettings, showRoutines, voiceBot]);
+
+  const resizeComputer = useCallback((width: number) => {
+    const next = Math.round(Math.max(320, Math.min(600, window.innerWidth * 0.45, width)));
+    setComputerWidth(next);
+    try { localStorage.setItem("rex.computerWidth", String(next)); } catch { /* storage unavailable */ }
+  }, []);
+
+  useEffect(() => {
+    if (!resizingComputer) return;
+    const move = (event: PointerEvent) => resizeComputer(window.innerWidth - event.clientX);
+    const stop = () => setResizingComputer(false);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", stop);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", stop);
+    };
+  }, [resizingComputer, resizeComputer]);
 
   useEffect(() => {
     const toolRunning = thread.some((item) => item.kind === "tool" && item.status === "running");
@@ -221,12 +242,8 @@ export function App() {
   }, [thread]);
 
   const refreshLists = useCallback(async () => {
-    const [convs, mems] = await Promise.all([
-      api.listConversations(),
-      api.listMemories(),
-    ]);
+    const convs = await api.listConversations();
     setConversations(convs);
-    setMemories(mems);
     setListsLoaded(true);
     return convs;
   }, []);
@@ -275,6 +292,8 @@ export function App() {
     setActiveId(id);
     setThreadWindow(THREAD_WINDOW);
     setThread(toThread(data.messages));
+    setBusy(Boolean(data.busy));
+    setFollowTurn(Boolean(data.busy));
     setConversations((previous) => {
       const exists = previous.some((item) => item.id === data.conversation.id);
       if (exists) return previous.map((item) => item.id === data.conversation.id ? data.conversation : item);
@@ -289,12 +308,47 @@ export function App() {
     setActiveId(undefined);
     setThread([]);
     setThreadWindow(THREAD_WINDOW);
+    setBusy(false);
+    setFollowTurn(false);
     attachments.clear();
     setDraft("");
     setError(null);
     setMobileNav(false);
     syncUrl("/app", history);
   }, [attachments]);
+
+  // Follow background turns, including scheduled routines and work resumed after reload.
+  useEffect(() => {
+    if (!activeId || (busy && !followTurn)) return;
+    let cancelled = false;
+    let timer: number;
+    const pull = async () => {
+      try {
+        const data = await api.getConversation(activeId);
+        if (cancelled) return;
+        const next = toThread(data.messages);
+        setThread((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+        if (data.busy) {
+          setBusy(true);
+          setFollowTurn(true);
+        }
+        if (!data.busy) {
+          setFollowTurn(false);
+          setBusy(false);
+          if (followTurn) void refreshLists().catch(() => undefined);
+        }
+      } catch {
+        /* keep trying while followTurn is on */
+      } finally {
+        if (!cancelled) timer = window.setTimeout(() => void pull(), followTurn ? 1200 : 4000);
+      }
+    };
+    void pull();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [followTurn, busy, activeId, refreshLists]);
 
   // Deep link from URL, or open the first bot when opening /app with bots.
   useEffect(() => {
@@ -355,6 +409,7 @@ export function App() {
     }
 
     setBusy(true);
+    setFollowTurn(false);
     setError(null);
     setDraft("");
 
@@ -390,6 +445,7 @@ export function App() {
     const uploadIds = sentAttachments.flatMap((item) => item.upload ? [item.upload.id] : []);
     attachments.clear(false);
     let accepted = false;
+    let handoff = false;
 
     try {
       await api.streamChat({
@@ -526,10 +582,17 @@ export function App() {
         attachments.restore(sentAttachments);
         setDraft(text);
         setThread((previous) => previous.filter((item) => item.kind !== "message" || (item.message.id !== userMsg.id && item.message.id !== assistantId)));
+        setError(e instanceof Error ? e.message : String(e));
+      } else {
+        // Browser dropped the stream; the server turn keeps going — follow via polling.
+        handoff = true;
+        setFollowTurn(true);
+        if (conversationId) {
+          void api.getConversation(conversationId).then((data) => setThread(toThread(data.messages))).catch(() => undefined);
+        }
       }
-      setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (!handoff) setBusy(false);
     }
   };
 
@@ -551,13 +614,12 @@ export function App() {
         onDrop={(event) => { if (event.dataTransfer.types.includes("Files")) { event.preventDefault(); dragDepth.current = 0; setDraggingFiles(false); if (!busy) { setError(null); attachments.add(Array.from(event.dataTransfer.files)); } } }}
         className="app-shell"
         navbar={{ width: 290, breakpoint: "sm", collapsed: { mobile: !mobileNav } }}
-        aside={{ width: computerHasDesktop ? { lg: 460, xl: 600 } : 420, breakpoint: "lg", collapsed: { desktop: !showComputer, mobile: true } }}
+        aside={{ width: computerWidth, breakpoint: "lg", collapsed: { desktop: !showComputer, mobile: true } }}
         padding={0}
       >
         <AppShell.Navbar p="md">
-          <Group gap="sm" mb="xl" justify="space-between" wrap="nowrap">
-            <Group gap="sm" wrap="nowrap"><BlobAvatar seed="rex-brand" size={46} /><div><Title order={3}>Rex</Title><Text size="xs" c="dimmed">Your AI teammate</Text></div></Group>
-            <ActionIcon hiddenFrom="sm" aria-label="Close menu" variant="subtle" size={44} onClick={() => setMobileNav(false)}><IconX /></ActionIcon>
+          <Group hiddenFrom="sm" justify="flex-end" mb="sm">
+            <ActionIcon aria-label="Close menu" variant="subtle" size={44} onClick={() => setMobileNav(false)}><IconX /></ActionIcon>
           </Group>
           <ScrollArea style={{ flex: 1 }} offsetScrollbars type="hover">
             <Stack gap={2}>
@@ -581,7 +643,7 @@ export function App() {
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div className="chat-nav-title">{c.bot?.name ?? c.title}</div>
                       <Text size="xs" c="dimmed" truncate>
-                        {c.id === activeId && busy ? "working…" : c.bot ? "Your teammate" : "Conversation"}
+                        {c.bot ? "Your teammate" : "Conversation"}
                       </Text>
                     </div>
                   </Group>
@@ -593,8 +655,6 @@ export function App() {
             </Stack>
           </ScrollArea>
           <Stack gap={6} className="sidebar-footer">
-            {busy ? <Group gap="xs" px="sm"><OrbitDots active /><Text size="sm" c="dimmed">Rex is working</Text></Group> : null}
-            <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconBrain />} onClick={() => { setShowMemory(true); setMobileNav(false); }}><Group gap="xs"><span>Memory</span><Text span size="xs" c="dimmed">{memories.length}</Text></Group></Button>
             <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconClock />} onClick={() => { setShowRoutines(true); setMobileNav(false); }}>Routines</Button>
             <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconSettings />} onClick={() => { setShowSettings(true); setMobileNav(false); }}>Settings</Button>
             <Menu position="top-start" width={240} withinPortal>
@@ -634,36 +694,12 @@ export function App() {
                   <Text fw={500} size="sm" className="conversation-title">
                     {activeTitle}
                   </Text>
-                  {busy ? (
-                    <Group gap={6}>
-                      <OrbitDots active />
-                      <Text size="xs" c="dimmed">
-                        Rex is working
-                      </Text>
-                    </Group>
-                  ) : null}
+                  {busy ? <Group gap={6} aria-live="polite" aria-label="Working"><OrbitDots active /></Group> : null}
                 </div>
               </Group>
               <Group gap={4} wrap="nowrap">
                 <Tooltip label="Rex Computer"><ActionIcon aria-label="Toggle computer drawer" aria-expanded={showComputer} variant={showComputer ? "light" : "subtle"} size={44} onClick={() => setShowComputer(!showComputer)}><IconComputer size={26} /></ActionIcon></Tooltip>
                 {activeId ? <Tooltip label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"}><ActionIcon aria-label={activeConversation?.kind === "group" ? "Group settings" : "Customize bot"} size={44} variant="subtle" disabled={busy} onClick={() => { if (activeConversation?.kind === "group") setGroupEditor(activeConversation); else if (activeConversation) setBotEditor(activeConversation); }}><IconCustomize size={26} /></ActionIcon></Tooltip> : null}
-                {activeId && activeConversation ? (
-                  <Tooltip label="Copy link">
-                    <ActionIcon
-                      size={44}
-                      variant="subtle"
-                      aria-label="Copy link"
-                      onClick={() => {
-                        const url = absoluteUrl(conversationPath(activeConversation));
-                        void navigator.clipboard.writeText(url).then(() => {
-                          notifications.show({ message: "Link copied", autoClose: 1800 });
-                        }).catch(() => setError("Could not copy link."));
-                      }}
-                    >
-                      <IconLink size={24} />
-                    </ActionIcon>
-                  </Tooltip>
-                ) : null}
               {activeId ? (
                 <Tooltip label="Delete conversation">
                   <ActionIcon
@@ -703,6 +739,7 @@ export function App() {
                   <>
                   {visibleThread.map((item) => {
                     if (item.kind === "tool") {
+                      if (!settings.showAgentActivity) return null;
                       const result = item.tool === "computer_exec" ? computerResult(item.detail) : null;
                       return (
                         <details key={item.id} className="tool-row tool-detail msg-in" data-status={item.status}>
@@ -791,6 +828,7 @@ export function App() {
                   })}
                   </>
                 )}
+                {busy && followTurn ? <Group gap="sm" role="status" aria-live="polite"><BlobAvatar seed={activeId ?? "rex-think"} appearance={activeBot} size={32} pulse /><OrbitDots active /><Text c="dimmed" size="sm">Working…</Text></Group> : null}
                 <div ref={bottomRef} />
               </Stack>
             </Box>
@@ -903,51 +941,14 @@ export function App() {
             </div>
           </div>
         </AppShell.Main>
-        {desktopComputer ? <AppShell.Aside className="computer-aside" p={0} aria-hidden={!showComputer} inert={!showComputer}><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={screenBotId} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></AppShell.Aside> : null}
+        {desktopComputer ? <AppShell.Aside className={`computer-aside${resizingComputer ? " resizing" : ""}`} p={0} aria-hidden={!showComputer} inert={!showComputer}>
+          <div role="separator" aria-label="Resize computer panel" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={600} aria-valuenow={computerWidth} tabIndex={0} className="computer-resize-handle" onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setResizingComputer(true); }} onKeyDown={(event) => { if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") { event.preventDefault(); resizeComputer(event.key === "Home" ? 320 : event.key === "End" ? 600 : computerWidth + (event.key === "ArrowLeft" ? 20 : -20)); } }} />
+          <ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={screenBotId} />
+        </AppShell.Aside> : null}
 
       </AppShell>
 
-        <Drawer opened={showMemory} onClose={() => setShowMemory(false)} closeButtonProps={{ "aria-label": "Close memory" }} title="Memory" position="right" size="md">
-          <Group gap="sm" mb="xs">
-            <BlobAvatar seed="memory-brain" size={32} float />
-            <Text fw={600}>Memory</Text>
-          </Group>
-          <Text size="sm" c="dimmed" mb="md">
-            What Rex kept about you
-          </Text>
-          <ScrollArea style={{ flex: 1 }} offsetScrollbars>
-            <Stack gap="sm">
-              {memories.length === 0 ? (
-                <Text c="dimmed" size="sm">
-                  Nothing stored yet.
-                </Text>
-              ) : (
-                memories.map((m) => (
-                  <Paper key={m.id} withBorder p="sm" radius="sm">
-                    <Group align="flex-start" wrap="nowrap" gap="xs">
-                      <Text size="sm" style={{ flex: 1 }}>
-                        {m.content}
-                      </Text>
-                      <ActionIcon
-                        size={44}
-                        variant="subtle"
-                        color="red"
-                        aria-label="Delete memory"
-                        onClick={() =>
-                          void api.deleteMemory(m.id).then(refreshLists).catch((e) => setError(String(e)))
-                        }
-                      >
-                        <IconX size={24} stroke={1.5} />
-                      </ActionIcon>
-                    </Group>
-                  </Paper>
-                ))
-              )}
-            </Stack>
-          </ScrollArea>
-        </Drawer>
-
-      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={screenBotId} onStatus={(status) => { if (status.desktop) { setComputerHasDesktop(true); setShowComputer(true); } }} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
+      {!desktopComputer ? <Drawer.Root opened={showComputer} onClose={() => setShowComputer(false)} position="right" size="min(460px, 100vw)" padding={0} keepMounted><Drawer.Overlay /><Drawer.Content aria-label="Rex Computer"><Drawer.Body><ComputerPanel active={showComputer} onClose={() => setShowComputer(false)} bots={computerBots} focusBotId={screenBotId} /></Drawer.Body></Drawer.Content></Drawer.Root> : null}
 
       {groupEditor ? <GroupEditor initial={groupEditor === "new" ? undefined : groupEditor} bots={conversations} onBotCreated={(bot) => setConversations((prev) => [bot, ...prev.filter((c) => c.id !== bot.id)])} onClose={() => setGroupEditor(null)} onSave={(group) => {
         const isNew = groupEditor === "new";

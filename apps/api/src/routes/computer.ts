@@ -50,6 +50,8 @@ computerRoutes.post("/computer/session/:botId/:action", async (c) => {
   try {
     if (action === "lock") return c.json(await computer.lock(botId));
     if (action === "unlock") return c.json(await computer.unlock(botId));
+    if (action === "take-control") return c.json(await computer.takeControl(botId));
+    if (action === "release-control") return c.json(computer.releaseControl(botId));
     return c.json({ error: "Unknown session action" }, 404);
   } catch (err) { return c.json({ error: errorMessage(err) }, 400); }
 });

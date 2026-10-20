@@ -75,6 +75,8 @@ export const execComputer = (command: string, botId?: string) => json<ComputerRe
 export const computerSession = (botId: string) => json<ComputerSession>(`/computer/session/${encodeURIComponent(botId)}`);
 export const computerSessionState = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/state`);
 export const unlockComputerSession = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/unlock`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+export const takeComputerControl = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/take-control`, post());
+export const releaseComputerControl = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/release-control`, post());
 export const computerViewUrl = (viewPath: string) => `${API_BASE}${viewPath}`;
 export interface TemplateState {
   host: { qemu: string | null; qemuImg: string | null; isoTool: string | null; ssh: boolean; kvm: boolean; accel: "kvm" | "tcg"; problems: string[] };
@@ -104,7 +106,7 @@ export const saveVoiceTurn = (id: string, turn: { id: string; user: string; assi
 export const endVoiceSession = (id: string) => json<{ ok: boolean }>(`/voice/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 export function getConversation(id: string) {
-  return json<{ conversation: Conversation; messages: ChatMessage[] }>(
+  return json<{ conversation: Conversation; messages: ChatMessage[]; busy: boolean }>(
     `/conversations/${id}`,
   );
 }

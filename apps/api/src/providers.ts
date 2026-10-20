@@ -183,7 +183,7 @@ export async function listModels(userId: string, input: { connectionId?: unknown
     const info = providerInfo(typeof input.provider === "string" ? input.provider : "custom");
     const baseUrl = normalizeBaseUrl(input.baseUrl, info.baseUrl);
     await assertProviderUrlAllowed(baseUrl, role);
-    t = { kind: info.kind, provider: info.id, baseUrl, apiKey: typeof input.apiKey === "string" ? input.apiKey.trim() : "", streamUsage: info.streamUsage };
+    t = { kind: info.kind, provider: info.id, baseUrl, apiKey: typeof input.apiKey === "string" ? input.apiKey.trim() : "", streamUsage: info.streamUsage, vision: info.vision };
   }
   const headers: Record<string, string> = t.kind === "anthropic"
     ? { "x-api-key": t.apiKey, "anthropic-version": "2023-06-01" }

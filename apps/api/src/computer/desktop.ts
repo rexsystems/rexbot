@@ -106,6 +106,7 @@ export class DesktopComputer {
   private readonly viewTokens = new Map<string, ViewToken>();
   private readonly lockTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly busyBots = new Set<string>();
+  private readonly ownerControl = new Map<string, number>();
   private booting: Promise<void> | null = null;
   private stopping = false;
   private readonly options: Required<DesktopComputerOptions>;
@@ -189,10 +190,11 @@ export class DesktopComputer {
   }
 
   isIdle(idleMs: number) {
-    return !this.busyBots.size && !this.booting && Date.now() - this.lastUsed > idleMs;
+    return !this.busyBots.size && ![...this.ownerControl.values()].some((until) => until > Date.now()) && !this.booting && Date.now() - this.lastUsed > idleMs;
   }
 
   private reset() {
+    this.ownerControl.clear();
     for (const timer of this.lockTimers.values()) clearTimeout(timer);
     this.lockTimers.clear();
     for (const tunnel of this.tunnels.values()) tunnel.process.kill();
@@ -231,7 +233,7 @@ export class DesktopComputer {
   }
 
   private toSession(session: GuestSession, token: string): ComputerSession {
-    const query = new URLSearchParams({ autoconnect: "1", reconnect: "1", scale: "true", path: `computer/vnc/${token}/websockify`, view_only: session.locked ? "1" : "0" });
+    const query = new URLSearchParams({ autoconnect: "1", reconnect: "1", scale: "true", path: `computer/vnc/${token}/websockify`, view_only: "1" });
     return { botId: session.botId, slot: session.slot, display: session.display, width: session.width, height: session.height, locked: session.locked, viewPath: `/computer/vnc/${token}/vnc_lite.html?${query}` };
   }
 
@@ -284,9 +286,30 @@ export class DesktopComputer {
     return { botId, locked: false };
   }
 
+  async takeControl(botId: string): Promise<ComputerSessionState> {
+    assertBotId(botId);
+    if (this.busyBots.has(botId)) throw new Error("Wait for the bot's current computer action to finish, then take control.");
+    this.ownerControl.set(botId, Date.now() + 60_000);
+    try {
+      await this.ensureGuestSession(botId);
+      return await this.unlock(botId);
+    } catch (error) {
+      this.ownerControl.delete(botId);
+      throw error;
+    }
+  }
+
+  releaseControl(botId: string): ComputerSessionState {
+    assertBotId(botId);
+    this.ownerControl.delete(botId);
+    this.lastUsed = Date.now();
+    return this.sessionState(botId);
+  }
+
   private async withBot<T>(botId: string, work: () => Promise<T>): Promise<T> {
     assertBotId(botId);
     this.lastUsed = Date.now();
+    if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has taken control of this computer. Wait until they return control before using it.");
     if (this.busyBots.has(botId)) throw new Error("This bot is already using Rex Computer. Wait for its current command to finish.");
     this.busyBots.add(botId);
     try { return await work(); } finally { this.busyBots.delete(botId); this.lastUsed = Date.now(); }

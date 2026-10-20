@@ -33,7 +33,7 @@ export const allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173",
 app.use("*", async (c, next) => {
   const origin = c.req.header("Origin");
   if (origin && !allowedOrigins.includes(origin)) return c.json({ error: "Origin not allowed" }, 403);
-  if (c.req.method === "POST" && !c.req.header("Content-Type")?.startsWith("application/json") && !c.req.path.startsWith("/uploads")) {
+  if (["POST", "PUT", "PATCH"].includes(c.req.method) && !c.req.header("Content-Type")?.startsWith("application/json") && !c.req.path.startsWith("/uploads")) {
     return c.json({ error: "application/json required" }, 415);
   }
   await next();
@@ -43,7 +43,7 @@ app.use(
   "*",
   cors({
     origin: allowedOrigins,
-    allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
     credentials: true,
   }),
@@ -68,6 +68,7 @@ app.get("/conversations/:id", (c) => {
   return c.json({
     conversation: conv,
     messages: listMessages(conv.id),
+    busy: activeChats.has(conv.id),
   });
 });
 

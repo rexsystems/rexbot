@@ -200,7 +200,7 @@ export async function runDueRoutines(now = Date.now()): Promise<number> {
       const routine = toRoutine(row);
       // Advance first, so a crash mid-run doesn't repeat the routine in a loop.
       db.prepare("UPDATE routines SET next_run_at = ? WHERE id = ?").run(new Date(nextRun(routine.schedule, routine.timeZone, now)).toISOString(), routine.id);
-      const result = await runRoutine(routine, row.user_id);
+      const result = await runRoutine(routine, row.user_id).catch((error: unknown) => ({ ok: false, error: error instanceof Error ? error.message : String(error), busy: false }));
       if (result.busy) {
         db.prepare("UPDATE routines SET next_run_at = ? WHERE id = ?").run(new Date(now + BUSY_RETRY_MS).toISOString(), routine.id);
         continue;
@@ -215,6 +215,7 @@ export async function runDueRoutines(now = Date.now()): Promise<number> {
 }
 
 export function startRoutineScheduler(intervalMs = 30_000) {
+  void runDueRoutines().catch((error) => console.error("Routine scheduler:", error));
   const timer = setInterval(() => { void runDueRoutines().catch((error) => console.error("Routine scheduler:", error)); }, intervalMs);
   timer.unref();
   return () => clearInterval(timer);

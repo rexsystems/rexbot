@@ -126,6 +126,20 @@ test("one action at a time per bot", async () => {
   await first;
 });
 
+test("owner control unlocks input and holds off bot actions until returned", async () => {
+  const { vm, computer } = computerWith();
+  vm.setState("running");
+  await computer.input("bot_a", { action: "key", keys: "Return" });
+  await computer.takeControl("bot_a");
+  assert.equal(computer.sessionState("bot_a").locked, false);
+  await assert.rejects(computer.input("bot_a", { action: "click", x: 1, y: 2 }), /taken control/);
+  await assert.rejects(computer.execute("echo one", "bot_a"), /taken control/);
+  computer.lastUsed = 0;
+  assert.equal(computer.isIdle(1), false);
+  computer.releaseControl("bot_a");
+  assert.equal((await computer.execute("echo one", "bot_a")).exitCode, 0);
+});
+
 test("input validation rejects malformed actions", () => {
   assert.throws(() => validateInput({ action: "drag" }), /action must be/);
   assert.throws(() => validateInput({ action: "click", x: 5 }), /both x and y/);

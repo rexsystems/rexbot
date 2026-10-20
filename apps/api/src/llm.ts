@@ -1,5 +1,6 @@
 import { providerInfo, type ClientSettings } from "@rex/shared";
 import { recordUsage, type ModelSettings } from "./providers.js";
+import { normalizeToolMarkup } from "./dsml.js";
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -53,7 +54,7 @@ export async function* streamChatCompletion(opts: {
   let toolCalls = 0;
   const source = route?.kind === "anthropic" ? streamAnthropic(opts, usage) : streamOpenAi(opts, usage);
   try {
-    for await (const chunk of source) {
+    for await (const chunk of normalizeToolMarkup(source, opts.tools)) {
       toolCalls += chunk.choices?.[0]?.delta?.tool_calls?.filter((call) => call.id).length ?? 0;
       yield chunk;
     }

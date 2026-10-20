@@ -25,10 +25,17 @@ test("suggestions account for case, whitespace, custom names, and uneven reuse",
   assert.equal(suggestBotName([...allExceptMilo, ...allExceptMilo, " milo "]), "Milo");
 });
 
-test("new bot colors prefer unused palette entries", () => {
+test("new bot colors are random hex, not locked to the swatch palette", () => {
   assert.ok(BOT_COLORS.length >= 8);
-  const used = BOT_COLORS.slice(0, -1);
-  assert.equal(suggestBotColor(used), BOT_COLORS.at(-1));
-  const allExceptFirstTwice = [...BOT_COLORS.slice(1), ...BOT_COLORS.slice(1)];
-  assert.equal(suggestBotColor(allExceptFirstTwice), BOT_COLORS[0]);
+  const samples = new Set<string>();
+  for (let i = 0; i < 40; i++) {
+    const color = suggestBotColor([]);
+    assert.match(color, /^#[a-f\d]{6}$/i);
+    samples.add(color.toLowerCase());
+  }
+  assert.ok(samples.size >= 20, `expected many distinct random colors, got ${samples.size}`);
+  const avoiding = BOT_COLORS.slice(0, 8);
+  const next = suggestBotColor(avoiding);
+  assert.match(next, /^#[a-f\d]{6}$/i);
+  assert.ok(!avoiding.map((c) => c.toLowerCase()).includes(next.toLowerCase()));
 });

@@ -157,6 +157,8 @@ export interface ClientSettings {
   embeddingProvider?: "google" | "openai";
   googleApiKey?: string;
   liveModel?: string;
+  /** When false (default), hide tool rows in chat while the bot works. */
+  showAgentActivity?: boolean;
 }
 
 export const DEFAULT_SETTINGS: ClientSettings = {
@@ -168,6 +170,7 @@ export const DEFAULT_SETTINGS: ClientSettings = {
   embeddingProvider: "google",
   googleApiKey: "",
   liveModel: "gemini-3.8-live",
+  showAgentActivity: false,
 };
 
 export interface VoiceSessionConfig {

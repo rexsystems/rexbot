@@ -10,6 +10,53 @@ body {
   background: #0c0b0a;
 }
 
+/* App-wide scrollbars — thin, warm track matching the shell. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #4a4338 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #3c3329;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #706a60;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.mantine-ScrollArea-scrollbar {
+  background: transparent;
+  width: 10px !important;
+  padding: 2px !important;
+}
+
+.mantine-ScrollArea-thumb {
+  background: #3c3329 !important;
+  border-radius: 8px;
+}
+
+.mantine-ScrollArea-thumb:hover {
+  background: #706a60 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .blob-float,
   .blob-pulse,
@@ -47,16 +94,16 @@ body {
   position: relative;
 }
 
-/* One column so the empty prompt, messages, and composer share the same center. */
+/* Full-bleed chat stage: scrollbar hugs the left edge of main. */
 .chat-column {
   flex: 1;
   min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  width: min(880px, 100%);
-  margin-inline: auto;
-  padding-inline: 1.5rem;
+  width: 100%;
+  margin-inline: 0;
+  padding-inline: 0;
   overflow: hidden;
 }
 
@@ -67,13 +114,20 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 1rem 0;
+  padding: 1rem 1.25rem 1rem 0.35rem;
   -webkit-overflow-scrolling: touch;
+  direction: rtl; /* put the chat scrollbar on the far left */
+  scrollbar-gutter: stable;
+}
+
+.thread-scroll > * {
+  direction: ltr;
 }
 
 .thread-stack {
   min-width: 0;
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
 }
 
 /* Center the empty prompt in the space above the composer. */
@@ -86,11 +140,13 @@ body {
 .thread-scroll.thread-empty .thread-empty-stack {
   width: 100%;
   margin: 0;
+  direction: ltr;
 }
 
 .composer-dock {
   flex-shrink: 0;
-  padding: 0.75rem 0 max(1rem, env(safe-area-inset-bottom));
+  width: 100%;
+  padding: 0.75rem 1.25rem max(1rem, env(safe-area-inset-bottom));
   background: #0c0b0a;
 }
 
@@ -507,9 +563,9 @@ body {
   min-height: 64px;
   flex-shrink: 0;
   flex-wrap: nowrap;
-  width: min(880px, 100%);
-  margin-inline: auto;
-  padding-inline: 1.5rem !important;
+  width: 100%;
+  margin-inline: 0;
+  padding-inline: 1.25rem !important;
 }
 .conversation-title { overflow-wrap: anywhere; }
 .empty-chat {
@@ -546,13 +602,13 @@ body {
 .md-body table { display: block; overflow-x: auto; }
 
 @media (max-width: 48em) {
-  .conversation-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 12px; }
+  .conversation-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 8px 10px; }
   .conversation-bar > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
   .conversation-bar > :last-child { grid-column: 2; grid-row: 1; gap: 0; }
-  .chat-column { padding-inline: 12px; }
-  .thread-scroll { padding: 12px 0 8px; }
-  .composer-dock { padding: 8px 0 max(12px, env(safe-area-inset-bottom)); }
-  .conversation-bar { padding-inline: 10px; gap: 8px; }
+  .chat-column { padding-inline: 0; }
+  .thread-scroll { padding: 12px 10px 8px 0.25rem; }
+  .composer-dock { padding: 8px 10px max(12px, env(safe-area-inset-bottom)); }
+  .conversation-bar { padding-inline: 10px !important; gap: 8px; }
   .conversation-bar > .mantine-Group-root { min-width: 0; }
   .conversation-title { font-size: 0.85rem; }
   .bubble-user { max-width: 94%; }
@@ -608,6 +664,10 @@ body {
 .conversation-bar > .mantine-Group-root:last-child { flex-shrink: 0; }
 .conversation-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .computer-aside { background: #11100e; border-color: #39352e; }
+.computer-resize-handle { position: absolute; inset: 0 auto 0 -6px; width: 12px; cursor: col-resize; touch-action: none; z-index: 2; }
+.computer-resize-handle:hover, .computer-resize-handle:focus-visible { background: #f58b42; outline: 2px solid #f58b42; outline-offset: -2px; }
+.computer-aside.resizing iframe { pointer-events: none; }
+.computer-aside.resizing { user-select: none; }
 .computer-panel { display: flex; flex-direction: column; height: 100dvh; min-height: 0; background: #11100e; }
 .computer-panel-heading { flex-shrink: 0; min-height: 72px; padding: 10px 16px; border-bottom: 1px solid #39352e; }
 .computer-panel-scroll { min-height: 0; flex: 1; }
@@ -621,8 +681,8 @@ body {
 .computer-screen { position: relative; width: 100%; aspect-ratio: 16 / 10; overflow: hidden; border: 1px solid #39352e; border-radius: 8px; background: #000; }
 .computer-screen iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .computer-screen-empty { display: grid; place-items: center; padding: 16px; background: #0c0b0a; text-align: center; }
-.computer-screen-hit { display: block; padding: 0; cursor: zoom-in; }
-.computer-screen-hit iframe { pointer-events: none; }
+.computer-screen iframe { pointer-events: none; }
+.computer-screen-controlled iframe { pointer-events: auto; }
 .computer-screen-hint {
   position: absolute; inset: auto 0 0 0; padding: 8px 12px;
   background: rgb(17 16 14 / 82%); color: #b8b2a6; font-size: 0.85rem; text-align: center;

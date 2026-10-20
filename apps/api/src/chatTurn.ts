@@ -141,10 +141,6 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
     conversation = getConversation(conversation.id)!;
   }
 
-  let memoryBlock: string;
-  try { memoryBlock = formatMemoryBlock(await retrieveMemories(settings, userId, message)); }
-  catch (error) { activeChats.delete(conversation.id); throw error; }
-
   const timeZone = userTimeZone(userId, input.timeZone);
   const now = { text: new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "full", timeStyle: "short" }).format(new Date()), timeZone };
   const skills = skillSummaries(userId);
@@ -155,8 +151,17 @@ export async function prepareChatTurn(input: TurnInput): Promise<PreparedTurn> {
     conversationId: conv.id,
     run: async (send) => {
       try {
+        // Persist + notify immediately so a reload already sees the user message.
         send({ type: "conversation", conversation: conv });
         send({ type: "user_message", message: userMessage });
+        let memoryBlock: string;
+        try {
+          memoryBlock = formatMemoryBlock(await retrieveMemories(settings, userId, message));
+        } catch (error) {
+          send({ type: "error", message: error instanceof Error ? error.message : String(error) });
+          send({ type: "done" });
+          return;
+        }
         const budget = { remaining: 6 };
         for (const [responderIndex, responder] of responders.entries()) {
         if (!responder) continue;

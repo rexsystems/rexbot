@@ -8,6 +8,7 @@ import {
   PasswordInput,
   Select,
   Stack,
+  Switch,
   Text,
   TextInput,
 } from "@mantine/core";
@@ -15,6 +16,7 @@ import { IconDeviceFloppy, IconKey, IconX } from "./icons";
 import type { ClientSettings, ProviderState } from "@rex/shared";
 import { ModelsPanel } from "./ModelsPanel";
 import { SkillsPanel } from "./SkillsPanel";
+import { MemoryPanel } from "./MemoryPanel";
 
 export function SettingsModal(props: {
   initial: ClientSettings;
@@ -43,7 +45,9 @@ export function SettingsModal(props: {
         <Tabs.List mb="md">
           <Tabs.Tab value="models">Models</Tabs.Tab>
           <Tabs.Tab value="skills">Skills</Tabs.Tab>
-          <Tabs.Tab value="voice">Voice and memory</Tabs.Tab>
+          <Tabs.Tab value="agent">Agent</Tabs.Tab>
+          <Tabs.Tab value="voice">Voice</Tabs.Tab>
+          <Tabs.Tab value="memory">Memory</Tabs.Tab>
           <Tabs.Tab value="search">Web search</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="models">
@@ -72,6 +76,18 @@ export function SettingsModal(props: {
         </Tabs.Panel>
         <Tabs.Panel value="skills">
           <SkillsPanel />
+        </Tabs.Panel>
+        <Tabs.Panel value="memory"><MemoryPanel /></Tabs.Panel>
+        <Tabs.Panel value="agent">
+          <Stack gap="md">
+            <Text c="dimmed" size="sm">While a bot works on the computer, chat stays quiet by default. Turn this on only if you want every command and tool result listed in the thread.</Text>
+            <Switch
+              label="Show agent activity in chat"
+              description="Commands, searches, and other tool output appear as expandable rows."
+              checked={Boolean(form.showAgentActivity)}
+              onChange={(event) => setForm({ ...form, showAgentActivity: event.currentTarget.checked })}
+            />
+          </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="voice">
       <Stack gap="md">
@@ -105,7 +121,7 @@ export function SettingsModal(props: {
         </Tabs.Panel>
       </Tabs>
       {/* Skills save on their own; this footer saves the browser-side settings on the other tabs. */}
-      {tab === "skills" ? null : <Stack gap="md">
+      {tab === "skills" || tab === "memory" ? null : <Stack gap="md">
         <Group justify="flex-end" mt="sm">
           <Button
             variant="default"

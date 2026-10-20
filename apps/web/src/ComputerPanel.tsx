@@ -147,12 +147,42 @@ function DesktopScreen({
   const [session, setSession] = useState<ComputerSession | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [controlling, setControlling] = useState(false);
+  const [changingControl, setChangingControl] = useState(false);
   const ready = status.running;
+
+  useEffect(() => {
+    if (!controlling || !botId) return;
+    if (!active || !ready) { setControlling(false); return; }
+    const timer = window.setInterval(() => {
+      void api.takeComputerControl(botId).catch((err) => {
+        setSessionError(errorText(err));
+        setControlling(false);
+      });
+    }, 20_000);
+    return () => {
+      window.clearInterval(timer);
+      void api.releaseComputerControl(botId).catch(() => undefined);
+    };
+  }, [controlling, botId, active, ready]);
+
+  async function toggleControl() {
+    if (!botId) return;
+    setChangingControl(true);
+    setSessionError(null);
+    try {
+      if (controlling) await api.releaseComputerControl(botId);
+      else await api.takeComputerControl(botId);
+      setControlling(!controlling);
+    } catch (err) { setSessionError(errorText(err)); }
+    finally { setChangingControl(false); }
+  }
 
   useEffect(() => {
     setSession(null);
     setSessionError(null);
     setExpanded(false);
+    setControlling(false);
   }, [botId]);
 
   useEffect(() => {
@@ -172,9 +202,16 @@ function DesktopScreen({
     return <Text size="sm" c="dimmed">Open a bot to see its screen.</Text>;
   }
 
+  const viewUrl = session ? new URL(api.computerViewUrl(session.viewPath), window.location.href) : null;
+  viewUrl?.searchParams.set("view_only", controlling ? "0" : "1");
+
   return (
     <Stack gap="md">
-      <Text fw={600}>{bot?.name ?? "Bot"}</Text>
+      <Group justify="space-between">
+        <Text fw={600}>{bot?.name ?? "Bot"}</Text>
+        <Button variant={controlling ? "filled" : "default"} size="compact-md" disabled={!session || !ready} loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button>
+      </Group>
+      <Text size="sm" c="dimmed">{controlling ? "You control the mouse and keyboard. Return control when you finish." : "Watch the bot, or take control to use its computer."}</Text>
       {error ? <Alert color="red" title="Computer error" role="alert">{error}</Alert> : null}
       {!status.available ? <Alert color="orange" title="Unavailable">{status.detail}</Alert> : null}
       {!ready ? (
@@ -182,41 +219,40 @@ function DesktopScreen({
           <Loader role="status" aria-label="Starting computer" />
           <Text size="sm" c="dimmed" mt="sm" ta="center" maw={320}>{status.vmState === "running" ? "Booting. The first start of a new computer takes about a minute." : "Starting your computer…"}</Text>
         </div>
-      ) : sessionError ? (
-        <Alert color="orange" title="Screen not available">{sessionError}</Alert>
       ) : !session ? (
+        sessionError ? <Alert color="orange" title="Screen not available">{sessionError}</Alert> :
         <div className="computer-screen computer-screen-empty"><Loader role="status" aria-label="Opening screen" /></div>
       ) : (
         <>
-          <button
-            type="button"
-            className="computer-screen computer-screen-hit"
+          {sessionError ? <Alert color="orange" title="Computer control">{sessionError}</Alert> : null}
+          <Button variant="subtle" onClick={() => setExpanded(true)}>Enlarge screen</Button>
+          <div
+            className={`computer-screen${controlling ? " computer-screen-controlled" : ""}`}
             style={{ aspectRatio: `${session.width} / ${session.height}` }}
-            onClick={() => setExpanded(true)}
-            aria-label={`Enlarge ${bot?.name ?? "bot"}'s screen`}
           >
+            {!expanded ?
             <iframe
-              key={session.viewPath}
+              key={`${session.viewPath}-${controlling}`}
               title={`${bot?.name ?? "Bot"}'s screen`}
-              src={api.computerViewUrl(session.viewPath)}
-              tabIndex={-1}
-            />
-            <span className="computer-screen-hint">Click to enlarge</span>
-          </button>
+              src={viewUrl!.href}
+              tabIndex={controlling ? 0 : -1}
+            /> : null}
+          </div>
           <Modal
             opened={expanded}
             onClose={() => setExpanded(false)}
-            title={bot?.name ?? "Screen"}
+            title={<Group><Text>{bot?.name ?? "Screen"}</Text><Button variant="default" loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button></Group>}
             size="95vw"
             centered
             padding="md"
             classNames={{ body: "computer-expand-body", content: "computer-expand-content" }}
           >
-            <div className="computer-screen computer-screen-expanded" style={{ aspectRatio: `${session.width} / ${session.height}` }}>
+            <div className={`computer-screen computer-screen-expanded${controlling ? " computer-screen-controlled" : ""}`} style={{ aspectRatio: `${session.width} / ${session.height}` }}>
               <iframe
-                key={`${session.viewPath}-full`}
+                key={`${session.viewPath}-full-${controlling}`}
                 title={`${bot?.name ?? "Bot"}'s screen (enlarged)`}
-                src={api.computerViewUrl(session.viewPath)}
+                src={viewUrl!.href}
+                tabIndex={controlling ? 0 : -1}
               />
             </div>
           </Modal>

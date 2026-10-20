@@ -110,6 +110,7 @@ export function RoutinesDrawer({ opened, onClose, conversations, activeId, onRan
     try {
       const result = await api.routines.run(routine.id);
       replace(result.routine);
+      if (!result.ok) setError(result.error ?? "The routine failed. Check its last error and try again.");
       onRan(routine.conversationId);
     } catch (err) {
       setError(errorText(err));
