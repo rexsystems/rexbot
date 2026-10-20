@@ -177,7 +177,7 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent";
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";

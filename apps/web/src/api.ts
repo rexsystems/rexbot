@@ -218,3 +218,11 @@ export const providers = {
   models: (input: { connectionId?: string; provider?: string; baseUrl?: string; apiKey?: string }) => json<{ models: ProviderModel[] }>("/providers/models", post(input)),
   setActive: (choice: ModelChoice | null) => json<ProviderState>("/providers/active", send("PUT", choice)),
 };
+
+export interface CursorStatus { connected: boolean; keyHint: string | null; keyName: string | null }
+
+export const cursor = {
+  status: () => json<CursorStatus>("/integrations/cursor"),
+  connect: (apiKey: string) => json<CursorStatus>("/integrations/cursor", send("PUT", { apiKey })),
+  disconnect: () => json<CursorStatus>("/integrations/cursor", { method: "DELETE" }),
+};

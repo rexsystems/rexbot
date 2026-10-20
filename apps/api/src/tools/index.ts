@@ -188,6 +188,10 @@ export async function runTool(
       return readUpload(String(args.upload_id ?? ""), context?.ownerId);
     case "http_fetch":
       return httpFetch(String(args.url ?? ""));
+    case "cursor_agent": {
+      const { cursorAgentTool } = await import("../integrations/cursor.js");
+      return cursorAgentTool(context?.ownerId, args);
+    }
     default:
       return `Unknown tool: ${name}`;
   }

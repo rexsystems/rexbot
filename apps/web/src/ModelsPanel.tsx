@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Alert, Anchor, Badge, Button, Group, Loader, Paper, PasswordInput, Select, SimpleGrid, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { PROVIDERS, providerInfo, type ProviderConnection, type ProviderId, type ProviderModel, type ProviderState } from "@rex/shared";
 import * as api from "./api";
+import { CursorCard } from "./CursorCard";
 import { ProviderLogo } from "./ProviderLogo";
 import { useSession } from "./session";
 
@@ -229,6 +230,15 @@ export function ModelsPanel({ onChange }: { onChange?: (state: ProviderState) =>
             </UnstyledButton>
           ))}
         </SimpleGrid>
+        <Text size="xs" c="dimmed">
+          Claude Pro/Max and ChatGPT Plus/Pro subscriptions can't be used here yet: Anthropic only allows API keys for apps like this,
+          and OpenAI's Sign in with ChatGPT for plan usage is a preview for apps running on your own computer. Use an API key from either console.
+        </Text>
+      </Stack>
+
+      <Stack gap="xs">
+        <Text fw={600}>Tools</Text>
+        <CursorCard />
       </Stack>
     </Stack>
   );

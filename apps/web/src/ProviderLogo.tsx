@@ -1,8 +1,8 @@
 import { providerInfo } from "@rex/shared";
 
 /** Official provider marks, stored in public/providers (see docs/provider-logos.md). */
-export function ProviderLogo({ provider, size = 40 }: { provider: string; size?: number }) {
-  const info = providerInfo(provider);
+export function ProviderLogo({ provider, size = 40, logo }: { provider: string; size?: number; logo?: string }) {
+  const info = { ...providerInfo(provider), ...(logo ? { logo } : {}) };
   return (
     <span className="provider-logo" style={{ width: size, height: size, borderRadius: Math.round(size * 0.26) }} aria-hidden="true">
       {info.logo

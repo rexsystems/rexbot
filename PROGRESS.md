@@ -72,12 +72,13 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [ ] Re-check provider URLs at request time against DNS rebinding (checked at save time today).
 
 ### Phase 5: Your own Claude / ChatGPT / Cursor accounts (research summary, see bottom)
-- [ ] Claude: Anthropic API key (Console). Optional: install unmodified Claude Code inside the user's VM and let
-      the user sign in through Anthropic's own flow.
-- [ ] ChatGPT: "Sign in with ChatGPT" open-source flow (OAuth + PKCE, Responses API) for locally hosted installs;
-      OpenAI API key otherwise.
-- [ ] Cursor: user API key from Cursor Dashboard; a `cursor_agent` tool that starts Cursor Cloud Agents on the
-      user's repos through the official Cloud Agents API.
+- [x] Claude: Anthropic API key (Console), native Messages adapter (Phase 4). Settings → Models says plainly that
+      Pro/Max subscriptions can't be used by apps like this.
+- [ ] Optional: install unmodified Claude Code inside the user's VM and let the user sign in through Anthropic's own flow.
+- [ ] ChatGPT: "Sign in with ChatGPT" plan usage. Not built yet, on purpose (see "ChatGPT sign-in: why not yet").
+      OpenAI API key works today.
+- [x] Cursor: user API key (checked with `GET /v1/me`, encrypted in `user_settings`), `cursor_agent` tool
+      (start / status / follow_up / list) offered only to users who connected a key, Settings → Models → Tools card.
 
 ### Phase 6: Assistant features (Grok Bot style)
 - [ ] Routines: scheduled prompts per bot (cron-like), run server-side, results posted in chat.
@@ -113,11 +114,29 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - In the desktop app, `<img>` previews of uploads can't send the Bearer token; previews need a signed URL (todo).
 - Playwright tests that need the Podman computer fail on hosts without Podman (they did before accounts too).
 
+- Phase 5: `integrations/cursor.ts` (Cloud Agents v1, Basic auth, `REX_CURSOR_API_URL` override for tests),
+  routes `GET/PUT/DELETE /integrations/cursor`, `test/cursor.test.ts` (fake Cursor server), web `CursorCard.tsx`.
+
+### ChatGPT sign-in: why not yet
+
+OpenAI's open-source "Sign in with ChatGPT" plan usage (developers.openai.com/siwc) is real and documented, but:
+- The OAuth callback must be `http://127.0.0.1:<port>/auth/callback` on the machine running the browser. That only
+  works when Rex runs on the user's own computer (or the Tauri app); a shared Rex server can't receive it.
+- OpenAI offers plan usage to open-source tools and personal projects that run locally; remotely hosted apps
+  must apply first. A multi-user Rex server is a remotely hosted app.
+- Requests must go to the Responses API (`store: false`, `stream: true`, no `temperature`/`max_output_tokens`,
+  function tools grouped in namespaces), so it needs a third adapter next to OpenAI-compatible and Anthropic.
+- It needs a Plus/Pro account to test; nothing here has one, and I won't ship an untested OAuth flow.
+Plan when it's picked up: provider kind `responses`, a loopback listener started only when `REX_HOST` is a
+loopback address, `ext_agent_host_id` as `urn:uuid:` persisted in the data dir, ID token checked against
+OpenAI's JWKS, refresh tokens rotated and stored encrypted, "Continue with ChatGPT" + "Manage usage" per the
+OpenAI UI guidelines.
+
 ## Where I stopped
 
-Phase 4 (providers) committed. Next: Phase 5: Cursor Cloud Agents as a tool with the user's own Cursor API key,
-"Sign in with ChatGPT" (OAuth + PKCE) for self-hosted installs, and a clear Claude subscription note in
-Settings → Models. Then Phase 6 (routines, skills, bot rules, vision).
+Phase 5 committed: Cursor Cloud Agents tool with the user's own key, subscription note in Settings → Models.
+ChatGPT sign-in deliberately deferred (reasons above). Next: Phase 6, starting with routines
+(scheduled prompts per bot), then skills, bot rules, vision.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

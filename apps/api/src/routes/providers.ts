@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { AppEnv } from "../auth.js";
+import { connectCursor, cursorStatus, disconnectCursor } from "../integrations/cursor.js";
 import { deleteConnection, listModels, providerState, saveConnection, setActiveModel } from "../providers.js";
 
 export const providerRoutes = new Hono<AppEnv>();
@@ -46,3 +47,16 @@ providerRoutes.put("/providers/active", async (c) => {
     return c.json({ error: message(error) }, 400);
   }
 });
+
+providerRoutes.get("/integrations/cursor", (c) => c.json(cursorStatus(c.get("user").id)));
+
+providerRoutes.put("/integrations/cursor", async (c) => {
+  const input = await c.req.json().catch(() => null) as { apiKey?: unknown } | null;
+  try {
+    return c.json(await connectCursor(c.get("user").id, typeof input?.apiKey === "string" ? input.apiKey : ""));
+  } catch (error) {
+    return c.json({ error: message(error) }, 400);
+  }
+});
+
+providerRoutes.delete("/integrations/cursor", (c) => c.json(disconnectCursor(c.get("user").id)));

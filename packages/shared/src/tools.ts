@@ -120,14 +120,34 @@ const BASE_TOOLS: ToolDefinition[] = [
   },
 ];
 
+/** Offered only when the user connected their own Cursor API key. */
+export const CURSOR_AGENT_TOOL: ToolDefinition = {
+  name: "cursor_agent",
+  description: "Delegate coding work on a git repository to a Cursor Cloud Agent running under the user's own Cursor account. Use ONLY when the user asks for work on a specific repository (fix, feature, refactor, review) or asks you to use Cursor. action=start launches an agent (it may push a branch and, with auto_create_pr, open a pull request), status reads its progress and final summary, follow_up sends more instructions to an existing agent, list shows recent agents. Agents take minutes: start, tell the user the link, and check status when asked. Never start one without the user's request.",
+  parameters: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["start", "status", "follow_up", "list"] },
+      prompt: { type: "string", description: "Task for start/follow_up, self-contained, up to 8000 characters" },
+      repo_url: { type: "string", description: "For start: repository URL, e.g. https://github.com/owner/repo" },
+      starting_ref: { type: "string", description: "For start: branch or commit to start from (default branch if omitted)" },
+      auto_create_pr: { type: "boolean", description: "For start: open a pull request when done. Only if the user asked for a PR." },
+      agent_id: { type: "string", description: "For status/follow_up: the bc-... id returned by start" },
+    },
+    required: ["action"],
+  },
+};
+
 export interface ComputerToolOptions {
   backend?: ComputerBackendKind;
   desktop?: boolean;
+  /** The user has a Cursor API key connected. */
+  cursor?: boolean;
 }
 
 export function toolDefinitions(options: ComputerToolOptions = {}): ToolDefinition[] {
   const computerTools = options.desktop ? [DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
-  return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1)];
+  return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : [])];
 }
 
 /** Tool list for the local Podman computer; use toolDefinitions() when the backend is known. */
