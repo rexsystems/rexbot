@@ -82,7 +82,7 @@ pnpm --filter api build-image     # or open the computer panel → Build image
 The image build downloads the Debian 13 cloud image, installs the desktop once, and stores it as a template. Each account's VM is a copy-on-write overlay of that template, created in seconds on first use. How it works, settings, and the security model: [docs/qemu-computer.md](docs/qemu-computer.md).
 
 - Every bot gets its own 1280×800 screen (Openbox and a taskbar) on its owner's VM. The computer panel shows the current bot's screen; in a group, pick a member's screen.
-- Bots get `computer_exec` (bash as `rex` in `/workspace/bots/<bot>`, with `DISPLAY` and passwordless sudo so they can `apt install` and set things up), `computer_input` (move, click, type, key combos, scroll), and `computer_screenshot` (saves a PNG and lists open windows; the model does not see pixels).
+- Bots get `computer_exec` (bash as `rex` in `/workspace/bots/<bot>`, with `DISPLAY` and passwordless sudo), `computer_input` (mouse and keyboard), project/file tools, and `computer_screenshot`. Vision-enabled model connections receive screenshot pixels for inspection; other models get metadata and can share the image with the owner.
 - While a bot uses the mouse or keyboard, its screen is view-only for you. It unlocks after a minute of inactivity, or when you press **Take control**.
 - Files in `/workspace` survive restarts. `/workspace/shared` is visible to all of the account's bots as `./shared`.
 - VMs start when a bot needs them and keep running across API restarts. An admin can enable idle shutdown.
@@ -124,7 +124,7 @@ Attach up to **8 files per message**, **8 MB each**. PNG, JPEG, WebP, GIF, and A
 
 Uploads appear immediately in the composer while transferring. Send stays disabled until they finish. Failed uploads can be retried or removed, and removing an unsent file cleans up its upload. Sent attachments are associated with their message and reload with it.
 
-Image display is independent of the model. **The current model adapter is text-only:** it sends attachment metadata and can read text documents, but does not send image pixels for visual understanding.
+Image display is independent of the model. Connections with image support enabled send recent supported attachments and guest screenshots to vision-capable models through the OpenAI-compatible or native Anthropic adapter. PNG, JPEG and WebP are supported for inspection, up to 5 MB each, with at most four recent images per model request. Other connections keep text/metadata input and must not claim to see pixels.
 
 ## Desktop
 
@@ -175,7 +175,7 @@ Rexbot provides chat, customizable bots, groups, private collaboration, Google l
 
 The text adapter preserves a provider's streamed `reasoning_content` through tool rounds and keeps model-scoped reasoning metadata for later turns. This supports [DeepSeek thinking-mode tool calls](https://api-docs.deepseek.com/guides/thinking_mode/). Metadata stays in local SQLite and is not part of visible chat messages or public conversation/private-exchange API responses. Reasoning from another provider/model is not forwarded. Speaker names are rendered by the interface; replies do not need to repeat `[Bot name]:` in their text.
 
-Scheduled routines are available through the Routines panel and the bot's routine tool. Bots can schedule useful follow-up for ongoing tasks, avoid duplicates, and report the schedule. The API must stay running and the account needs a server-saved model connection. Model vision remains unfinished; see `PROGRESS.md` for the plan. Changes are welcome through GitHub issues and pull requests.
+Scheduled routines are available through the Routines panel and the bot's routine tool. Bots can schedule useful follow-up for ongoing tasks, avoid duplicates, and report the schedule. The API must stay running and the account needs a server-saved model connection. Bots can ask focused clarification questions in a persisted chat card; the answer dialog accepts options or custom text and resumes the same conversation. See `PROGRESS.md` for remaining work.
 
 ## License
 

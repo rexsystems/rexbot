@@ -94,7 +94,7 @@ body {
   position: relative;
 }
 
-/* Full-bleed chat stage: scrollbar hugs the left edge of main. */
+/* Full-bleed chat stage. */
 .chat-column {
   flex: 1;
   min-height: 0;
@@ -116,7 +116,7 @@ body {
   overscroll-behavior: contain;
   padding: 1rem 1.25rem 1rem 0.35rem;
   -webkit-overflow-scrolling: touch;
-  direction: rtl; /* put the chat scrollbar on the far left */
+  direction: ltr;
   scrollbar-gutter: stable;
 }
 
@@ -129,6 +129,10 @@ body {
   width: 100%;
   max-width: none;
 }
+.chat-question-card { min-width: 0; max-width: 38rem; }
+.chat-question-form { max-height: calc(100dvh - 180px); overflow-y: auto; padding: 2px 4px 8px 2px; }
+.chat-question-option { min-height: 44px; display: flex; align-items: center; }
+.chat-question-option label { overflow-wrap: anywhere; }
 
 /* Center the empty prompt in the space above the composer. */
 .thread-scroll.thread-empty {

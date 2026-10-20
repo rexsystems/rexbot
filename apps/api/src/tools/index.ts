@@ -7,6 +7,7 @@ import { db } from "../db.js";
 import { computers, isDesktopComputer, UnavailableComputer } from "../computer.js";
 import { isReaction, setReaction } from "../reactions.js";
 import type { MessagingContext } from "../botMessaging.js";
+import { modelImage, type ModelImage } from "../vision.js";
 
 const FETCH_TIMEOUT_MS = 12_000;
 const FETCH_MAX_BYTES = 200_000;
@@ -132,7 +133,7 @@ export async function runTool(
   name: string,
   argsJson: string,
   settings: ClientSettings,
-  context?: { userMessageId: string; ownerId?: string; conversationId?: string; timeZone?: string; send?: (event: SseEvent) => void } & Partial<MessagingContext>,
+  context?: { userMessageId: string; ownerId?: string; conversationId?: string; timeZone?: string; send?: (event: SseEvent) => void; onImage?: (image: ModelImage) => void } & Partial<MessagingContext>,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -144,6 +145,15 @@ export async function runTool(
 
   const computer = () => context?.ownerId ? computers.forOwner(context.ownerId) : new UnavailableComputer(computers.kind, "No account context for this computer.");
   switch (name) {
+    case "ask_user": {
+      if (!context?.ownerId || !context.conversationId || !context.botId) return "ask_user unavailable in private bot replies.";
+      try {
+        const { askUser } = await import("../chatQuestions.js");
+        const result = askUser(context.ownerId, context.conversationId, context.botId, args.questions);
+        if (!result.existing) context.send?.({ type: "assistant_message", message: result.message });
+        return JSON.stringify({ waiting_for_user: true, question_id: result.question.id });
+      } catch (error) { return `ask_user failed: ${error instanceof Error ? error.message : String(error)}`; }
+    }
     case "message_bot": {
       if (!context?.botId || !context.budget) return "message_bot unavailable in this context.";
       const { messageBot } = await import("../botMessaging.js");
@@ -168,15 +178,26 @@ export async function runTool(
         if (name === "computer_files" || name === "computer_project") return await desktop.workspace(context.botId, name === "computer_files" ? "files" : "project", args);
         if (name === "computer_screenshot") {
           if (args.share !== undefined && typeof args.share !== "boolean") return "computer_screenshot failed: share must be a boolean.";
+          if (args.inspect !== undefined && typeof args.inspect !== "boolean") return "computer_screenshot failed: inspect must be a boolean.";
+          const inspect = Boolean(context.onImage) && args.inspect !== false;
+          if (args.share !== true && inspect) {
+            if (args.path !== undefined && typeof args.path !== "string") return "computer_screenshot failed: path must be a workspace image path.";
+            const image = await desktop.image(context.botId, args.path as string | undefined);
+            const pixels = modelImage(image.bytes);
+            if (pixels) context.onImage!(pixels);
+            return JSON.stringify({ filename: image.filename, path: image.path, pixels_included: !!pixels, note: pixels ? "Inspect the image in the next model round." : "Image is unsupported or exceeds the 5 MB vision limit. Resize it inside the guest before inspecting." });
+          }
           if (args.share === true) {
             if (!context.ownerId || !context.conversationId) return "computer_screenshot unavailable: images can only be shared in the owner's conversation, not private bot replies.";
             if (args.path !== undefined && typeof args.path !== "string") return "computer_screenshot failed: path must be a workspace image path.";
             if (args.caption !== undefined && (typeof args.caption !== "string" || args.caption.length > 1000)) return "computer_screenshot failed: caption must be text up to 1000 characters.";
             const image = await desktop.image(context.botId, args.path as string | undefined);
+            const pixels = inspect ? modelImage(image.bytes) : null;
+            if (pixels) context.onImage!(pixels);
             const { shareComputerImage } = await import("../computerImages.js");
             const message = shareComputerImage(context.ownerId, context.conversationId, context.botId, image, args.caption as string | undefined);
             context.send?.({ type: "assistant_message", message });
-            return JSON.stringify({ shared: true, message_id: message.id, attachment: message.attachments![0] });
+            return JSON.stringify({ shared: true, message_id: message.id, attachment: message.attachments![0], pixels_included: !!pixels });
           }
           if (args.path !== undefined) return "computer_screenshot failed: set share=true to attach a saved image.";
           return await desktop.screenshot(context.botId);

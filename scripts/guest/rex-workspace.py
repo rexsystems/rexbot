@@ -183,7 +183,7 @@ def main(request):
             data = handle.read(8 * 1024 * 1024 + 1)
         if len(data) > 8 * 1024 * 1024:
             raise ValueError("Image exceeds 8 MB. Capture a smaller image.")
-        return {"filename": target.name, "data": base64.b64encode(data).decode("ascii")}
+        return {"filename": target.name, "path": str(target), "data": base64.b64encode(data).decode("ascii")}
     return files(root, request["args"]) if request["operation"] == "files" else project(root, bot, request["args"], request.get("open_browser", True))
 
 

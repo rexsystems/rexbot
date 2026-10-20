@@ -75,11 +75,16 @@ const DESKTOP_PROJECT: ToolDefinition = {
 
 const DESKTOP_SCREENSHOT: ToolDefinition = {
   name: "computer_screenshot",
-  description: "Capture your Rex Computer screen. With share=true, attach the actual image to the owner's current chat, where they can enlarge it. Optionally provide path to attach a saved screenshot or image inside your own workspace instead of capturing the current screen (e.g. a browser screenshot at a specific viewport). caption is optional. Without share, returns screen metadata and a saved PNG path. You cannot see the pixels; do not claim to have visually inspected them. Private bot replies cannot post attachments to the owner's chat.",
-  parameters: { type: "object", properties: { share: { type: "boolean", description: "Attach the actual image to this chat" }, path: { type: "string", description: "Optional image path in your own workspace; requires share=true" }, caption: { type: "string", description: "Optional short image caption, up to 1000 characters" } } },
+  description: "Capture your Rex Computer screen for inspection. If the selected connection supports vision, image pixels are included in the next model round by default; inspect=false skips this. Otherwise only metadata is available: do not claim to see pixels. With share=true, also attach the actual image to the owner's current chat. Optional path selects a saved screenshot inside your workspace (e.g. another viewport); caption is optional. Private bot replies cannot post chat attachments.",
+  parameters: { type: "object", properties: { inspect: { type: "boolean", description: "Inspect the pixels if the selected model supports vision; defaults true" }, share: { type: "boolean", description: "Attach the actual image to this chat" }, path: { type: "string", description: "Optional image path in your own workspace, for inspection or sharing" }, caption: { type: "string", description: "Optional short image caption, up to 1000 characters" } } },
 };
 
 const BASE_TOOLS: ToolDefinition[] = [
+  {
+    name: "ask_user",
+    description: "Ask the owner 1 to 3 focused clarification questions in a chat card with an answer dialog. Use only when a material requirement remains ambiguous after checking available context/references. Provide 2 to 4 concise options, or omit options for a text answer; the owner can always write a custom answer. Do useful independent research first. Do not ask for choices you can reasonably make. After success, stop this turn and wait for the owner's answer. Never perform dependent work while waiting. Unavailable in private teammate replies.",
+    parameters: { type: "object", properties: { questions: { type: "array", minItems: 1, maxItems: 3, items: { type: "object", properties: { question: { type: "string" }, options: { type: "array", items: { type: "string" }, maxItems: 4 } }, required: ["question"] } } }, required: ["questions"] },
+  },
   {
     name: "message_bot",
     description: "Send a private question or task to a bot listed in your available teammates, and receive its real reply. Use when the user asks you to contact it, or a specific second opinion would help. Only bots sharing a group may communicate. Include the context the teammate needs; it cannot see your personal chat. Exchanges are visible to the owner in the group's private-message log. No recursive delegation.",

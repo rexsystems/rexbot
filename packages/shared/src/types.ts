@@ -2,6 +2,7 @@ import type { ModelChoice } from "./providers.js";
 export type Role = "system" | "user" | "assistant" | "tool";
 
 export interface ChatMessage {
+  question?: ChatQuestion;
   id: string;
   conversationId: string;
   role: Role;
@@ -180,7 +181,13 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_files" | "computer_project" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine" | "load_skill";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_files" | "computer_project" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine" | "load_skill" | "ask_user";
+
+export interface ChatQuestion {
+  id: string;
+  questions: Array<{ id: string; question: string; options: string[] }>;
+  answeredAt: string | null;
+}
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";

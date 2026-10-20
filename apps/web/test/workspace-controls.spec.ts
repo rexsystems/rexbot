@@ -68,7 +68,7 @@ test("computer resize, owner control and memory settings work on desktop and mob
   await page.getByRole("button", { name: "Toggle computer drawer", exact: true }).click();
   await expect(page.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Take control", exact: true }).click();
-  await expect(page.getByRole("dialog").getByRole("button", { name: "Return control", exact: true })).toBeVisible();
+  await expect(page.locator(".computer-expand-content").getByRole("button", { name: "Return control", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "test-results/computer-controls-mobile.png" });
   await page.keyboard.press("Escape");

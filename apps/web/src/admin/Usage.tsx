@@ -6,6 +6,19 @@ import { useLoad } from "./useLoad";
 
 const RANGES = [{ value: "7", label: "7 days" }, { value: "30", label: "30 days" }, { value: "90", label: "90 days" }];
 
+const exactTokens = new Intl.NumberFormat("en-US");
+const compactTokens = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
+
+function TokenCount({ value }: { value: number }) {
+  const exact = exactTokens.format(value);
+  if (value < 1_000_000) return <span>{exact}</span>;
+  return (
+    <Tooltip label={exact} withArrow events={{ hover: true, focus: true, touch: true }}>
+      <span tabIndex={0} aria-label={`${exact} tokens`}>{compactTokens.format(value)}</span>
+    </Tooltip>
+  );
+}
+
 export function Usage() {
   const [days, setDays] = useState("30");
   const { data, error, loading } = useLoad(() => api.admin.usage(Number(days)), [days]);
@@ -30,7 +43,7 @@ export function Usage() {
             </Paper>
             <Paper className="admin-card" withBorder radius="md" p="lg">
               <Text size="sm" c="dimmed" fw={500}>Tokens</Text>
-              <div className="admin-stat-value">{formatNumber(totals.tokens)}</div>
+              <div className="admin-stat-value"><TokenCount value={totals.tokens} /></div>
               <Text size="sm" c="dimmed">{totals.tokens ? "As reported by the model providers" : "Not reported by the providers in this period"}</Text>
             </Paper>
           </SimpleGrid>
@@ -59,8 +72,8 @@ export function Usage() {
                     <Table.Tr key={row.userId}>
                       <Table.Td><Text size="sm" fw={500}>{row.name}</Text><Text size="xs" c="dimmed">{row.email}</Text></Table.Td>
                       <Table.Td ta="right">{formatNumber(row.messages)}</Table.Td>
-                      <Table.Td ta="right">{formatNumber(row.promptTokens)}</Table.Td>
-                      <Table.Td ta="right">{formatNumber(row.completionTokens)}</Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.promptTokens} /></Table.Td>
+                      <Table.Td ta="right"><TokenCount value={row.completionTokens} /></Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -79,8 +92,8 @@ export function Usage() {
                         <Table.Td>{row.provider}</Table.Td>
                         <Table.Td><Text size="sm" ff="monospace">{row.model}</Text></Table.Td>
                         <Table.Td ta="right">{formatNumber(row.requests)}</Table.Td>
-                        <Table.Td ta="right">{formatNumber(row.promptTokens)}</Table.Td>
-                        <Table.Td ta="right">{formatNumber(row.completionTokens)}</Table.Td>
+                        <Table.Td ta="right"><TokenCount value={row.promptTokens} /></Table.Td>
+                        <Table.Td ta="right"><TokenCount value={row.completionTokens} /></Table.Td>
                       </Table.Tr>
                     ))}
                   </Table.Tbody>

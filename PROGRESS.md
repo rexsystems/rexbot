@@ -88,7 +88,7 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - [x] Skills: per-account instruction packs (Settings → Skills). Bots see names and "when to use" in the prompt
       and pull full instructions with `load_skill`, so long skills don't cost tokens on every turn.
 - [x] Guest-only autonomy, concise replies, silent instruction application, and relevant proactive routines without duplicates or recursive scheduling.
-- [ ] Model vision for image attachments where the provider supports it.
+- [x] Model vision for supported image attachments and guest screenshots on vision-enabled connections.
 
 ## Done
 
@@ -148,9 +148,9 @@ Desktop website connections, cookie-only web authentication, dependency upgrades
 DSML parsing, guest network boundaries, and click-to-open computer controls are implemented. DSML fixes were
 pushed as `18ab9e8`. Linux DEB/RPM desktop installers build successfully. The live VM network check passed;
 the live noVNC check verified browser typing by reading a file written in the guest. The full suite passes:
-43 API tests, 17 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
+45 API tests, 18 web tests, 2 desktop UI tests, plus 2 Rust tests. Live checks run separately with a provisioned
 VM image. npm audits report no known vulnerabilities, and no workspace packages are outdated.
-Vision and server-side Tavily/Google settings remain future work. Deployment and boundaries: `docs/desktop.md`.
+Server-side Tavily/Google settings remain future work. Deployment and boundaries: `docs/desktop.md`.
 
 The follow-up adds structured guest file editing and managed per-bot project servers, using a Python helper sent
 over SSH so existing images work without rebuilding. Live VM tests verify file edits, HTTP inspection, the browser
@@ -180,6 +180,19 @@ caption. Captures travel from the guest over a bounded SSH channel and are store
 on bot-authored messages, emitted immediately and preserved after reload. Larger bot previews reuse the existing
 image viewer. API checks cover real DSML execution through the sharing tool, persistence, raster validation and
 cross-account denial. Live QEMU checks capture an actual screen and transfer a PNG above the old 40 KB limit.
+
+Reference-driven prompts now require checking official pages and inspecting the guest UI before claiming visual
+verification. Material ambiguity uses ask_user: persisted question cards, a mobile answer modal, custom answers,
+retry without losing text, and a server runner that pauses dependent tools until the answer. Normal follow-up text
+also resolves pending questions. Concurrent duplicate form submissions create only one answer. The chat scrollbar
+uses LTR scrolling on the right. Vision connections receive screenshot pixels after complete tool-result groups,
+and recent owner-scoped chat images are restored on later turns. Text-only connections stay honest about their limits.
+Existing local Bedrock/provider and conversation-navigation edits were preserved separately from this work.
+
+Admin token counts now abbreviate only at one million or above, with exact comma-grouped values on hover and
+keyboard focus. Browser coverage checks the threshold, billion counts and exact tooltips. Follow-up messages
+explicitly preserve unfinished work in the bot rules; realtime regression coverage verifies original context and
+continued tool execution after a status question. Typecheck and the focused checks pass.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

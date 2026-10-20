@@ -1,6 +1,7 @@
 import { providerInfo, type ClientSettings } from "@rex/shared";
 import { recordUsage, type ModelSettings } from "./providers.js";
 import { normalizeToolMarkup } from "./dsml.js";
+import { openAiMessages, recentImageMessages, type ModelImage } from "./vision.js";
 
 export interface LlmMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -9,6 +10,7 @@ export interface LlmMessage {
   tool_call_id?: string;
   tool_calls?: LlmToolCall[];
   name?: string;
+  images?: ModelImage[];
 }
 
 export interface LlmToolCall {
@@ -53,7 +55,8 @@ export async function* streamChatCompletion(opts: {
   }
   const usage = { prompt: 0, completion: 0 };
   let toolCalls = 0;
-  const source = route?.kind === "anthropic" ? streamAnthropic(opts, usage) : streamOpenAi(opts, usage);
+  const input = { ...opts, messages: recentImageMessages(opts.messages) };
+  const source = route?.kind === "anthropic" ? streamAnthropic(input, usage) : streamOpenAi(input, usage);
   try {
     for await (const chunk of normalizeToolMarkup(source, opts.tools)) {
       toolCalls += chunk.choices?.[0]?.delta?.tool_calls?.filter((call) => call.id).length ?? 0;
@@ -91,7 +94,7 @@ async function providerError(res: Response) {
 
 async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessage[]; tools?: unknown[]; signal?: AbortSignal }, usage: { prompt: number; completion: number }): AsyncGenerator<ChatCompletionChunk> {
   const { settings, messages, tools } = opts;
-  const body: Record<string, unknown> = { model: settings.llmModel, messages, stream: true };
+  const body: Record<string, unknown> = { model: settings.llmModel, messages: openAiMessages(messages), stream: true };
   if (tools?.length) {
     body.tools = tools;
     body.tool_choice = "auto";
@@ -123,12 +126,13 @@ type AnthropicBlock =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: string };
+type AnthropicImage = { type: "image"; source: { type: "base64"; media_type: string; data: string } };
 
 /** Turns Chat Completions messages into Anthropic Messages: system apart, tool results as user turns. */
 export function toAnthropicMessages(messages: LlmMessage[]) {
   const system = messages.filter((message) => message.role === "system").map((message) => message.content ?? "").filter(Boolean).join("\n\n");
-  const out: Array<{ role: "user" | "assistant"; content: AnthropicBlock[] }> = [];
-  const push = (role: "user" | "assistant", blocks: AnthropicBlock[]) => {
+  const out: Array<{ role: "user" | "assistant"; content: Array<AnthropicBlock | AnthropicImage> }> = [];
+  const push = (role: "user" | "assistant", blocks: Array<AnthropicBlock | AnthropicImage>) => {
     if (!blocks.length) return;
     const last = out.at(-1);
     if (last?.role === role) last.content.push(...blocks);
@@ -148,7 +152,7 @@ export function toAnthropicMessages(messages: LlmMessage[]) {
       }
       push("assistant", blocks);
     } else {
-      push("user", [{ type: "text", text: message.content || "(empty)" }]);
+      push("user", [...(message.images ?? []).map((image): AnthropicImage => ({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } })), { type: "text", text: message.content || "(empty)" }]);
     }
   }
   // The API wants the conversation to open with a user turn.

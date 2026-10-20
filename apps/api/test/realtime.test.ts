@@ -44,6 +44,14 @@ test("messages sent during generation are saved immediately and interrupt the mo
     if (!body.stream) { response.end(JSON.stringify({ choices: [{ message: { content: "[]" } }] })); return; }
     response.setHeader("Content-Type", "text/event-stream");
     const users = body.messages.filter((item: { role: string }) => item.role === "user");
+    if (users.at(-1).content === "How is it going?") {
+      assert.ok(users.some((item: { content: string }) => item.content === "Run commands"), "the original task stays in context");
+      assert.match(body.messages[0].content, /Keep unfinished authorized work active/);
+      const resumed = body.messages.some((item: { role: string; content: string }) => item.role === "tool" && item.content.includes('"command":"resume"'));
+      const delta = resumed ? { content: "Status answered; original work finished." } : { tool_calls: [{ index: 0, id: "resume_work", type: "function", function: { name: "computer_exec", arguments: JSON.stringify({ command: "resume" }) } }] };
+      response.end(`data: ${JSON.stringify({ choices: [{ delta }] })}\n\ndata: [DONE]\n\n`);
+      return;
+    }
     if (users.at(-1).content === "Run commands") {
       response.end(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: ["first", "second"].map((command, index) => ({ index, id: `test_${index}`, type: "function", function: { name: "computer_exec", arguments: JSON.stringify({ command }) } })) } }] })}\n\ndata: [DONE]\n\n`);
       return;
@@ -94,6 +102,10 @@ test("messages sent during generation are saved immediately and interrupt the mo
     await work.text();
     assert.deepEqual(commands, ["first"], "obsolete tool calls must not execute after a user update");
     assert.ok(listMessages(bot.id).some((item) => item.role === "tool" && item.content.startsWith("Skipped:")));
+
+    await (await send("How is it going?")).text();
+    assert.deepEqual(commands, ["first", "resume"], "a side question must still allow work on the original task");
+    assert.equal(listMessages(bot.id).at(-1)!.content, "Status answered; original work finished.");
 
     const peer = createConversation("Peer", { ...DEFAULT_BOT, name: "Peer" }, TEST_USER.id);
     const group = saveGroup("Live group", [bot.id, peer.id], TEST_USER.id);

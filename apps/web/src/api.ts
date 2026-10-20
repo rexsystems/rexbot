@@ -31,6 +31,7 @@ import type {
 } from "@rex/shared";
 
 const configuredBase = import.meta.env.VITE_API_URL;
+export const answerQuestion = (id: string, answers: string[], settings: ClientSettings) => json<{ ok: boolean }>(`/questions/${encodeURIComponent(id)}/answer`, send("POST", { answers, settings, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
 /** "same-origin" is for builds the API serves itself; otherwise the dev server and the desktop app talk to localhost:8787. */
 export const API_BASE = configuredBase === "same-origin" || (!configuredBase && import.meta.env.PROD) ? window.location.origin : configuredBase ?? "http://localhost:8787";
 

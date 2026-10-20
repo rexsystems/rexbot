@@ -363,7 +363,7 @@ export class DesktopComputer {
     });
   }
 
-  async image(botId: string, path?: string): Promise<{ filename: string; bytes: Buffer }> {
+  async image(botId: string, path?: string): Promise<{ filename: string; bytes: Buffer; path?: string }> {
     if (path !== undefined && (typeof path !== "string" || !path || path.length > 1024)) throw new Error("Provide an image path inside this bot's workspace.");
     return this.withBot(botId, async () => {
       await this.ensureGuestSession(botId);
@@ -371,11 +371,11 @@ export class DesktopComputer {
       const helper = readFileSync(new URL("../../../../scripts/guest/rex-workspace.py", import.meta.url), "utf8");
       const result = await this.ssh(["python3", "-"], `import json\nREQUEST = json.loads(bytes.fromhex("${payload}").decode())\n${helper}`, 40_000, 12 * 1024 * 1024);
       if (result.timedOut || result.code !== 0) throw new Error(result.output.slice(0, 1000) || "Could not read the guest image.");
-      const image = parseJson<{ filename: string; data: string }>(result.output, "image");
+      const image = parseJson<{ filename: string; data: string; path?: string }>(result.output, "image");
       if (typeof image.data !== "string" || typeof image.filename !== "string") throw new Error("Guest returned an invalid image.");
       const bytes = Buffer.from(image.data, "base64");
       if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error("Guest image must be between 1 byte and 8 MB.");
-      return { filename: image.filename, bytes };
+      return { filename: image.filename, bytes, path: typeof image.path === "string" ? image.path : undefined };
     });
   }
 }

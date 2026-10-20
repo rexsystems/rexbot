@@ -25,6 +25,7 @@ import { groupRoutes } from "./routes/groups.js";
 import { activeChats } from "./groups.js";
 import { voiceRoutes } from "./routes/voice.js";
 import { webApp } from "./webApp.js";
+import { questionRoutes } from "./routes/questions.js";
 
 export const app = new Hono<AppEnv>();
 const port = Number(process.env.PORT || 8787);
@@ -99,6 +100,7 @@ app.route("/", adminRoutes);
 app.route("/", providerRoutes);
 app.route("/", routineRoutes);
 app.route("/", skillRoutes);
+app.route("/", questionRoutes);
 
 app.post("/messages/:id/reactions", async (c) => {
   const id = c.req.param("id");

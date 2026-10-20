@@ -67,6 +67,7 @@ import { GroupEditor } from "./GroupEditor";
 import { VoiceModal } from "./VoiceModal";
 import { DeleteDialog } from "./DeleteDialog";
 import { MentionInput } from "./MentionInput";
+import { ChatQuestionCard } from "./ChatQuestionCard";
 import { DraftAttachments, SentAttachments } from "./Attachments";
 import { useAttachments } from "./useAttachments";
 import { startActivityPulse, stopActivityPulse } from "./uiSounds";
@@ -98,7 +99,7 @@ function toThread(messages: ChatMessage[]): ThreadItem[] {
   return messages.filter((message) => message.toolName !== "react_message").map((message): ThreadItem => {
     if (message.role !== "tool") return { kind: "message", message };
     const result = message.toolName === "computer_exec" ? computerResult(message.content) : null;
-    const failed = /^(computer_exec failed:|computer_(input|screenshot|files|project) (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
+    const failed = /^(computer_exec failed:|computer_(input|screenshot|files|project) (failed|unavailable)|ask_user (failed|unavailable)|message_bot failed:|message_bot unavailable)/.test(message.content) || Boolean(result && result.exitCode !== 0);
     return { kind: "tool", id: message.id, tool: message.toolName ?? "tool", status: failed ? "error" : "done", detail: message.content };
   });
 }
@@ -121,7 +122,7 @@ function computerResult(detail?: string): ComputerResult | null {
   } catch { return null; }
 }
 
-const toolLabels: Record<string, string> = { computer_files: "Project files", computer_project: "Project server", computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
+const toolLabels: Record<string, string> = { ask_user: "Questions", computer_files: "Project files", computer_project: "Project server", computer_exec: "Rex Computer", computer_input: "Mouse & keyboard", computer_screenshot: "Look at screen", web_search: "Web search", http_fetch: "Read webpage", read_upload: "Read attachment", message_bot: "Private bot message" };
 
 export function App() {
   const [settings, setSettings] = useState<ClientSettings>(() => loadSettings());
@@ -884,6 +885,8 @@ export function App() {
                           >
                             {m.content}
                           </Text>
+                        ) : m.question ? (
+                          <ChatQuestionCard question={m.question} settings={settings} onAnswered={() => { setFollowTurn(true); setBusy(true); }} />
                         ) : (
                           <AssistantReply
                             content={botReplyText(m.content, m.botName ?? activeBot.name)}

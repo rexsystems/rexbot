@@ -3,6 +3,7 @@ import { normalizeBotProfile, type BotProfile, type ChatMessage, type Conversati
 import { db, nowIso } from "./db.js";
 import { getReactions } from "./reactions.js";
 import { messageUploads } from "./uploads.js";
+import { messageQuestion } from "./chatQuestions.js";
 
 function readBot(raw: string | null): BotProfile | undefined {
   if (!raw) return undefined;
@@ -132,6 +133,7 @@ export function listMessages(conversationId: string): ChatMessage[] {
     createdAt: r.created_at,
     reactions: getReactions(r.id),
     attachments: messageUploads(r.id),
+    question: messageQuestion(r.id),
     botId: r.bot_id,
     botName: r.bot_name,
   }));
