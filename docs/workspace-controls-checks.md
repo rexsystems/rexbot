@@ -19,6 +19,13 @@ The live guest test also writes and reads a project through `computer_files`, re
 
 `apps/api/test/realtime.test.ts` verifies immediate message persistence, cancellation of the old model stream, updated model context, chronological partial replies, skipping obsolete tool calls after a running command completes, and switching the selected group member. `apps/web/test/realtime.spec.ts` verifies three messages through the live composer and deduplication after reload. The resulting conversation screenshot was visually inspected.
 
+## Screen reconnection follow-up
+
+- Hard Gate PASS: the reconnection browser check uses the real expired-page and viewer HTML, verifies keyboard activation in the preview, reconnection in the expanded modal, a failed retry followed by success, and rejection of notifications from an unrelated source window. Connection and module failures provide a retry state rather than a dead screen.
+- Purpose Gate PASS: the existing screen surface carries the disconnected state, using the requested "Disconnected, click to reconnect" action. Retry stays inside the preview/modal to avoid making the owner close and reopen the panel. Colors and type follow the existing computer screen; no new assets were added.
+- Liveliness PASS: ENERGY 1 / RHYTHM 1 / MOTION 1 remains unchanged. The single reconnect action is the screen's focus while disconnected, and the screen returns to its normal preview after connection succeeds.
+- Craftsmanship PASS: build, typecheck, the API suite and focused computer/reconnection browser checks pass. The expired-page response retains its 404 status, nonce CSP, no-store caching and sandbox isolation. Browser coverage verifies remounting even when the session URL is unchanged, and the disconnected screenshot was visually inspected.
+
 ## Limits
 
 The launcher browser tests simulate the native command bridge. Rust validation tests and actual Linux installer builds pass, but the native application's remote login flow has not been manually tested across desktop operating systems. Windows and macOS installers were not built here. No production website was deployed during this work; the server needs deployment and restart to apply the changes. Existing VMs with unrestricted network arguments restart on next use while retaining their disks.

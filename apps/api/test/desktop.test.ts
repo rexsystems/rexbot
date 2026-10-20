@@ -196,6 +196,10 @@ test("noVNC files and websocket are proxied only for valid tokens", async () => 
     assert.equal(ok.status, 200);
     assert.equal(await ok.text(), "page /vnc_lite.html?x=1");
     assert.equal((await proxyVncHttp(new Request(`http://localhost/computer/vnc/${"u".repeat(24)}/vnc_lite.html`), resolve)).status, 404);
+    const expired = await proxyVncHttp(new Request(`http://localhost/computer/vnc/${"u".repeat(24)}/view.html`), resolve);
+    assert.equal(expired.status, 404);
+    assert.match(expired.headers.get("Content-Type")!, /text\/html/);
+    assert.match(await expired.text(), /Disconnected, click to reconnect/);
   } finally { files.close(); }
 
   const websockify = net.createServer((socket) => {

@@ -164,6 +164,12 @@ inspecting projects and taking screenshots. New shell calls have DISPLAY/dbus un
 project helpers defer browser opening. Desktop unit coverage and the live VM regression verify continued work
 without stealing the owner's screen.
 
+Expired screen URLs, noVNC disconnects, failed module loads and connection timeouts show
+"Disconnected, click to reconnect". Clicking refreshes the authenticated session and remounts the viewer, including
+when its URL stays unchanged. Preview and expanded screen support retry, with errors visible in the open modal.
+Only messages from the current screen iframe can change its connection state. Reconnection regression coverage
+uses the actual viewer HTML and exercises expiry, disconnect, keyboard retry, a failed retry and frame-message spoofing.
+
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
 - **Claude (Anthropic)**: third-party apps must use API keys from Claude Console. Anthropic's Claude Code legal

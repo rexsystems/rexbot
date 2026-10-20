@@ -45,6 +45,8 @@ The QEMU relay is a fixed netcat connection to that proxy; guest input cannot se
 
 Computer previews open when clicked. Take control opens the interactive screen and reserves mouse/keyboard input for the owner. The bot continues editing files, running commands, checking projects, and taking screenshots. New shell commands have DISPLAY/dbus unset while the owner controls the screen, and project servers defer opening browser windows so they do not steal focus. A command already running in the guest can finish. Control leases expire if the client stops renewing them. The screen runs in a sandboxed iframe without same-origin privileges, so scripts served by the guest cannot read the parent page or make authenticated API requests. A valid short-lived view token is required for screen files and WebSockets.
 
+An expired screen URL or lost connection shows "Disconnected, click to reconnect". Clicking it fetches a current authenticated screen session and reloads the viewer in place. The preview and expanded modal both support retry; failed retries keep the action available and show an error. The parent accepts connection notifications only from its current iframe, including its opaque sandbox origin. Module-load failures and connection timeouts also enter the disconnected state.
+
 HTTP fetch tools also enforce the public-address boundary, even if the legacy `REX_ALLOW_PRIVATE_FETCH` provider override is set. Admin-connected local model providers are a separate, explicit server configuration.
 
 ## Autonomous routines

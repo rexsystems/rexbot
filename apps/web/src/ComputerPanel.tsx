@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "./session";
 import { ActionIcon, Alert, Button, Group, Loader, Modal, ScrollArea, Stack, Text, Textarea } from "@mantine/core";
 import type { ComputerResult, ComputerSession, ComputerStatus } from "@rex/shared";
@@ -178,7 +178,53 @@ function DesktopScreen({
   const [expanded, setExpanded] = useState(false);
   const [controlling, setControlling] = useState(false);
   const [changingControl, setChangingControl] = useState(false);
+  const [disconnected, setDisconnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [screenRevision, setScreenRevision] = useState(0);
+  const previewFrame = useRef<HTMLIFrameElement>(null);
+  const expandedFrame = useRef<HTMLIFrameElement>(null);
+  const reconnectInFlight = useRef(false);
+  const connectionTimer = useRef<number | undefined>(undefined);
+  const selectedBot = useRef(botId);
+  selectedBot.current = botId;
   const ready = status.running;
+
+  async function reconnect() {
+    if (!botId || reconnectInFlight.current) return;
+    reconnectInFlight.current = true;
+    setReconnecting(true);
+    setSessionError(null);
+    try {
+      const next = await api.computerSession(botId);
+      if (selectedBot.current !== botId) return;
+      setSession(next);
+      setDisconnected(false);
+      setScreenRevision((revision) => revision + 1);
+    } catch (err) {
+      if (selectedBot.current === botId) { setSessionError(errorText(err)); setDisconnected(true); }
+    } finally { reconnectInFlight.current = false; setReconnecting(false); }
+  }
+
+  useEffect(() => {
+    const receive = (event: MessageEvent) => {
+      if (!event.source || (event.source !== previewFrame.current?.contentWindow && event.source !== expandedFrame.current?.contentWindow)) return;
+      if (event.data?.type !== "rex-screen-state") return;
+      if (event.data.state === "disconnected" || event.data.state === "connected") {
+        window.clearTimeout(connectionTimer.current);
+        setDisconnected(event.data.state === "disconnected");
+      }
+      if (event.data.state === "reconnect") void reconnect();
+    };
+    window.addEventListener("message", receive);
+    return () => window.removeEventListener("message", receive);
+  }, [botId]);
+
+  useEffect(() => {
+    if (!session) return;
+    setDisconnected(false);
+    connectionTimer.current = window.setTimeout(() => setDisconnected(true), 20_000);
+    return () => window.clearTimeout(connectionTimer.current);
+  }, [expanded, controlling, session?.viewPath, screenRevision]);
 
   useEffect(() => {
     if (!controlling || !botId) return;
@@ -213,6 +259,7 @@ function DesktopScreen({
     setSessionError(null);
     setExpanded(false);
     setControlling(false);
+    setDisconnected(false);
   }, [botId]);
 
   useEffect(() => {
@@ -242,7 +289,7 @@ function DesktopScreen({
     <Stack gap="md">
       <Group justify="space-between">
         <Text fw={600}>{bot?.name ?? "Bot"}</Text>
-        <Button variant={controlling ? "filled" : "default"} size="compact-md" disabled={!session || !ready} loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button>
+        <Button variant={controlling ? "filled" : "default"} size="compact-md" disabled={!session || !ready || disconnected || reconnecting} loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button>
       </Group>
       <Text size="sm" c="dimmed">{controlling ? "You control the mouse and keyboard. The bot keeps working in the background." : "Watch the bot, or take control to use its computer."}</Text>
       {error ? <Alert color="red" title="Computer error" role="alert">{error}</Alert> : null}
@@ -253,47 +300,52 @@ function DesktopScreen({
           <Text size="sm" c="dimmed" mt="sm" ta="center" maw={320}>{status.vmState === "running" ? "Booting. The first start of a new computer takes about a minute." : "Starting your computer…"}</Text>
         </div>
       ) : !session ? (
-        sessionError ? <Alert color="orange" title="Screen not available">{sessionError}</Alert> :
+        sessionError ? <Stack gap="sm"><Alert color="orange" title="Screen not available">{sessionError}</Alert><Button variant="default" loading={reconnecting} onClick={() => void reconnect()}>Disconnected, click to reconnect</Button></Stack> :
         <div className="computer-screen computer-screen-empty"><Loader role="status" aria-label="Opening screen" /></div>
       ) : (
         <>
-          {sessionError ? <Alert color="orange" title="Computer control">{sessionError}</Alert> : null}
+          {sessionError && !expanded ? <Alert color="orange" title="Computer control">{sessionError}</Alert> : null}
           <button
             type="button"
-            className="computer-screen computer-screen-hit"
+            className={`computer-screen computer-screen-hit${disconnected ? " computer-screen-disconnected" : ""}`}
             style={{ aspectRatio: `${session.width} / ${session.height}` }}
-            onClick={() => setExpanded(true)}
-            aria-label={`Open ${bot?.name ?? "bot"}'s computer`}
+            onClick={() => disconnected ? void reconnect() : setExpanded(true)}
+            disabled={reconnecting}
+            aria-label={disconnected ? "Disconnected, click to reconnect" : `Open ${bot?.name ?? "bot"}'s computer`}
           >
             {!expanded ?
             <iframe
-              key={`${session.viewPath}-${controlling}`}
+              ref={previewFrame}
+              key={`${session.viewPath}-${controlling}-${screenRevision}`}
               title={`${bot?.name ?? "Bot"}'s screen`}
               src={previewUrl!.href}
               tabIndex={-1}
               sandbox="allow-scripts"
               inert
             /> : null}
-            <span className="computer-screen-hint">Click to open computer</span>
+            <span className="computer-screen-hint" role="status">{reconnecting ? "Reconnecting…" : disconnected ? "Disconnected, click to reconnect" : "Click to open computer"}</span>
           </button>
           <Modal
             opened={expanded}
             onClose={() => { setExpanded(false); setControlling(false); }}
-            title={<Group><Text>{bot?.name ?? "Screen"}</Text><Button variant="default" loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button></Group>}
+            title={<Group><Text>{bot?.name ?? "Screen"}</Text><Button variant="default" disabled={disconnected || reconnecting} loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button></Group>}
             size="95vw"
             centered
             padding="md"
             classNames={{ body: "computer-expand-body", content: "computer-expand-content" }}
           >
+            {sessionError ? <Alert color="orange" title="Computer connection" mb="sm">{sessionError}</Alert> : null}
             <div className={`computer-screen computer-screen-expanded${controlling ? " computer-screen-controlled" : ""}`} style={{ aspectRatio: `${session.width} / ${session.height}` }}>
               {expanded ? <iframe
-                key={`${session.viewPath}-full-${controlling}`}
+                ref={expandedFrame}
+                key={`${session.viewPath}-full-${controlling}-${screenRevision}`}
                 title={`${bot?.name ?? "Bot"}'s screen (enlarged)`}
                 src={viewUrl!.href}
                 tabIndex={controlling ? 0 : -1}
                 sandbox="allow-scripts"
                 inert={!controlling}
               /> : null}
+              {disconnected || reconnecting ? <button type="button" className="computer-screen-reconnect" disabled={reconnecting} onClick={() => void reconnect()}>{reconnecting ? "Reconnecting…" : "Disconnected, click to reconnect"}</button> : null}
             </div>
           </Modal>
         </>

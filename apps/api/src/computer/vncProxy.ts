@@ -27,23 +27,36 @@ export async function proxyVncHttp(request: Request, resolve: ViewResolver): Pro
   const url = new URL(request.url);
   const target = parseVncPath(url.pathname);
   const view = target ? resolve(target.token) : null;
+  if (target?.rest === "view.html" && !view) {
+    const nonce = randomBytes(16).toString("base64");
+    return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Disconnected</title><style nonce="${nonce}">html,body{margin:0;height:100%;background:#11100e;color:#ebe7df;font:14px system-ui}body{display:grid;place-items:center}button{color:inherit;background:#292620;border:1px solid #736c61;border-radius:6px;padding:16px;cursor:pointer}</style><button type="button">Disconnected, click to reconnect</button><script nonce="${nonce}">parent.postMessage({type:'rex-screen-state',state:'disconnected'},'*');document.querySelector('button').addEventListener('click',()=>{if(parent===window)location.assign('/app');else parent.postMessage({type:'rex-screen-state',state:'reconnect'},'*');});</script></html>`, { status: 404, headers: {
+      "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+      "Content-Security-Policy": `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; frame-ancestors *; base-uri 'none'; form-action 'none'`,
+    } });
+  }
   if (!target || !view) return new Response("This screen link expired. Reopen the computer panel.", { status: 404 });
   if (target.rest.includes("..")) return new Response("Not found", { status: 404 });
   if (target.rest === "view.html") {
     const nonce = randomBytes(16).toString("base64");
     const socketOrigin = url.origin.replace(/^http/, "ws");
     return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rex Computer screen</title><style nonce="${nonce}">html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#11100e;color:#ebe7df;font:14px system-ui}body{display:flex;flex-direction:column}#status{padding:6px 10px;flex:none}#screen{flex:1;min-height:0}button{margin-left:12px;color:inherit;background:#39352e;border:0;padding:6px 10px;border-radius:4px}</style></head><body><div id="status" role="status">Connecting…</div><div id="screen"></div><script nonce="${nonce}" type="module">
-import RFB from './core/rfb.js';
 const status = document.getElementById('status');
+const notify = (state) => parent.postMessage({ type: 'rex-screen-state', state }, '*');
+const disconnected = () => { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Disconnected, click to reconnect'; button.addEventListener('click', () => { if (parent === window) location.reload(); else notify('reconnect'); }); status.replaceChildren(button); notify('disconnected'); };
+let rfb;
+const timeout = setTimeout(() => { disconnected(); rfb?.disconnect(); }, 15000);
+try {
+const { default: RFB } = await import('./core/rfb.js');
 const viewOnly = new URLSearchParams(location.search).get('view_only') === 'true';
-const rfb = new RFB(document.getElementById('screen'), ${JSON.stringify(`${socketOrigin}/computer/vnc/${target.token}/websockify`)});
+rfb = new RFB(document.getElementById('screen'), ${JSON.stringify(`${socketOrigin}/computer/vnc/${target.token}/websockify`)});
 rfb.viewOnly = viewOnly;
 rfb.scaleViewport = true;
 rfb.resizeSession = false;
-rfb.addEventListener('connect', () => { status.textContent = viewOnly ? 'Connected · viewing' : 'Connected · you control the computer'; if (!viewOnly) rfb.focus(); });
-rfb.addEventListener('disconnect', () => { status.textContent = 'Screen disconnected. Close and reopen the computer preview to reconnect.'; });
-rfb.addEventListener('securityfailure', () => { status.textContent = 'Screen connection failed. Close and reopen the preview.'; });
-window.addEventListener('pagehide', () => rfb.disconnect(), { once: true });
+rfb.addEventListener('connect', () => { clearTimeout(timeout); status.textContent = viewOnly ? 'Connected · viewing' : 'Connected · you control the computer'; notify('connected'); if (!viewOnly) rfb.focus(); });
+rfb.addEventListener('disconnect', () => { clearTimeout(timeout); disconnected(); });
+rfb.addEventListener('securityfailure', () => { clearTimeout(timeout); disconnected(); });
+} catch { clearTimeout(timeout); disconnected(); }
+window.addEventListener('pagehide', () => { clearTimeout(timeout); rfb?.disconnect(); }, { once: true });
 </script></body></html>`, { headers: {
       "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*",
       "Content-Security-Policy": `default-src 'none'; script-src ${url.origin} 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src ${socketOrigin}; img-src data: blob:; frame-ancestors *; base-uri 'none'; form-action 'none'`,
