@@ -17,6 +17,7 @@ does not imply endorsement.
 | `openrouter.svg` | OpenRouter | Simple Icons 16.35.0 | CC0-1.0 |
 | `openai.svg` | OpenAI | [homarr-labs/dashboard-icons](https://github.com/homarr-labs/dashboard-icons) (`openai-light`) | Apache-2.0 |
 | `xai.svg` | xAI / Grok | homarr-labs/dashboard-icons (`grok`) | Apache-2.0 |
+| `bedrock.svg` | Amazon Bedrock | Original geometric mark (AWS orange / slate) | Rex |
 
 Changes made here: each file's fill is set once for the dark UI (the brand color from Simple Icons' data when it
 has enough contrast on `#24221e`, otherwise the UI's light text color `#f0ebe3`), and fixed width/height

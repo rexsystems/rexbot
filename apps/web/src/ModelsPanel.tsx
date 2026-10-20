@@ -49,7 +49,7 @@ function ConnectForm({ provider, existing, onDone, onCancel }: { provider: Provi
   const [checked, setChecked] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const editableUrl = info.id === "custom" || info.local || Boolean(existing);
+  const editableUrl = info.id === "custom" || info.local || Boolean(info.baseUrlEditable) || Boolean(existing);
 
   async function check() {
     setChecking(true);
@@ -97,7 +97,13 @@ function ConnectForm({ provider, existing, onDone, onCancel }: { provider: Provi
         {editableUrl ? (
           <TextInput
             label="Base URL"
-            description={info.local ? (admin ? "Where the local server listens, as seen from the Rex server." : "Only admins can connect local servers.") : "The address that serves /chat/completions and /models."}
+            description={
+              info.id === "bedrock-mantle"
+                ? "Match the Region of your Bedrock API key. Grok needs …/openai/v1 (not bare /v1)."
+                : info.local
+                  ? (admin ? "Where the local server listens, as seen from the Rex server." : "Only admins can connect local servers.")
+                  : "The address that serves /chat/completions and /models."
+            }
             value={baseUrl}
             onChange={(event) => setBaseUrl(event.currentTarget.value)}
             placeholder="https://api.example.com/v1"

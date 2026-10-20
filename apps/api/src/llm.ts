@@ -43,6 +43,25 @@ function baseUrl(settings: ClientSettings) {
   return settings.llmBaseUrl.replace(/\/$/, "");
 }
 
+/** Bedrock Mantle serves some models on /v1 and others on /openai/v1 — wrong path → "isn't supported on this route". */
+export function bedrockMantleAltBase(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (!/^bedrock-mantle\.[a-z0-9-]+\.api\.aws$/i.test(parsed.hostname)) return null;
+    const path = parsed.pathname.replace(/\/+$/, "") || "/";
+    if (/\/openai\/v1$/i.test(path)) parsed.pathname = path.replace(/\/openai\/v1$/i, "/v1");
+    else if (/\/v1$/i.test(path)) parsed.pathname = path.replace(/\/v1$/i, "/openai/v1");
+    else return null;
+    return parsed.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function isWrongMantleRoute(status: number, body: string) {
+  return status === 400 && /isn't supported on this route/i.test(body);
+}
+
 export async function* streamChatCompletion(opts: {
   settings: ModelSettings;
   messages: LlmMessage[];
@@ -101,13 +120,20 @@ async function* streamOpenAi(opts: { settings: ModelSettings; messages: LlmMessa
     body.tool_choice = "auto";
   }
   if (settings.route?.streamUsage) body.stream_options = { include_usage: true };
-  const res = await fetch(`${baseUrl(settings)}/chat/completions`, {
-    method: "POST",
-    headers: { ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}), "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: opts.signal,
-  });
-  if (!res.ok) throw await providerError(res);
+  const headers = { ...(settings.llmApiKey ? { Authorization: `Bearer ${settings.llmApiKey}` } : {}), "Content-Type": "application/json" };
+  const payload = JSON.stringify(body);
+  const primary = baseUrl(settings);
+  let res = await fetch(`${primary}/chat/completions`, { method: "POST", headers, body: payload, signal: opts.signal });
+  if (!res.ok) {
+    const text = await res.text();
+    const alt = bedrockMantleAltBase(primary);
+    if (alt && isWrongMantleRoute(res.status, text)) {
+      res = await fetch(`${alt}/chat/completions`, { method: "POST", headers, body: payload, signal: opts.signal });
+      if (!res.ok) throw await providerError(res);
+    } else {
+      throw new Error(`Model provider error ${res.status}: ${text.slice(0, 400)}`);
+    }
+  }
   for await (const { data } of sseEvents(res)) {
     if (data === "[DONE]") return;
     let chunk: ChatCompletionChunk & { usage?: ProviderUsage | null };
@@ -282,24 +308,32 @@ export async function completeJson(opts: {
     recordUsage(opts.settings.route, opts.settings.llmModel, mergeUsage({ prompt: 0, completion: 0 }, json.usage, true), 0);
     return json.content?.filter((block) => block.type === "text").map((block) => block.text ?? "").join("") ?? "";
   }
-  const res = await fetch(`${baseUrl(opts.settings)}/chat/completions`, {
-    method: "POST",
-    headers: {
-      ...(opts.settings.llmApiKey ? { Authorization: `Bearer ${opts.settings.llmApiKey}` } : {}),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: opts.settings.llmModel,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: opts.system },
-        { role: "user", content: opts.user },
-      ],
-    }),
+  const headers = {
+    ...(opts.settings.llmApiKey ? { Authorization: `Bearer ${opts.settings.llmApiKey}` } : {}),
+    "Content-Type": "application/json",
+  };
+  const payload = JSON.stringify({
+    model: opts.settings.llmModel,
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: opts.system },
+      { role: "user", content: opts.user },
+    ],
   });
+  const primary = baseUrl(opts.settings);
+  let res = await fetch(`${primary}/chat/completions`, { method: "POST", headers, body: payload });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`LLM error ${res.status}: ${text.slice(0, 400)}`);
+    const alt = bedrockMantleAltBase(primary);
+    if (alt && isWrongMantleRoute(res.status, text)) {
+      res = await fetch(`${alt}/chat/completions`, { method: "POST", headers, body: payload });
+      if (!res.ok) {
+        const retry = await res.text();
+        throw new Error(`LLM error ${res.status}: ${retry.slice(0, 400)}`);
+      }
+    } else {
+      throw new Error(`LLM error ${res.status}: ${text.slice(0, 400)}`);
+    }
   }
   const json = (await res.json()) as {
     choices: Array<{ message?: { content?: string } }>;

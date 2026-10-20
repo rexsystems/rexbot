@@ -189,7 +189,11 @@ export async function listModels(userId: string, input: { connectionId?: unknown
   const headers: Record<string, string> = t.kind === "anthropic"
     ? { "x-api-key": t.apiKey, "anthropic-version": "2023-06-01" }
     : t.apiKey ? { Authorization: `Bearer ${t.apiKey}` } : {};
-  const response = await fetch(`${t.baseUrl}/models${t.kind === "anthropic" ? "?limit=1000" : ""}`, { headers, signal: AbortSignal.timeout(15_000), redirect: "error" });
+  // Mantle lists models on /v1/models even when chat runs on /openai/v1.
+  const modelsBase = t.provider === "bedrock-mantle"
+    ? t.baseUrl.replace(/\/openai\/v1\/?$/i, "/v1").replace(/\/+$/, "")
+    : t.baseUrl;
+  const response = await fetch(`${modelsBase}/models${t.kind === "anthropic" ? "?limit=1000" : ""}`, { headers, signal: AbortSignal.timeout(15_000), redirect: "error" });
   if (response.status === 401 || response.status === 403) throw new Error("The provider rejected this key.");
   if (!response.ok) throw new Error(`The provider answered ${response.status} when listing models.`);
   const body = await response.json() as { data?: Array<{ id?: unknown; display_name?: unknown; name?: unknown }>; models?: Array<{ id?: unknown; name?: unknown }> };

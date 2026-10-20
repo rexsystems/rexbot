@@ -7,7 +7,7 @@ export type ProviderKind = "openai" | "anthropic";
 
 export type ProviderId =
   | "openai" | "anthropic" | "google" | "xai" | "deepseek" | "openrouter" | "mistral" | "groq"
-  | "ollama" | "lmstudio" | "custom";
+  | "bedrock-mantle" | "ollama" | "lmstudio" | "custom";
 
 export interface ProviderInfo {
   id: ProviderId;
@@ -21,6 +21,8 @@ export interface ProviderInfo {
   /** Logo in apps/web/public/providers; missing means a letter tile. */
   logo?: string;
   local?: boolean;
+  /** Show the base URL field on first connect (e.g. to pick an AWS Region). */
+  baseUrlEditable?: boolean;
   /** Supports stream_options.include_usage, so token counts reach the usage page. */
   streamUsage: boolean;
   /** Its main models accept images. Users can override this per connection. */
@@ -37,6 +39,20 @@ export const PROVIDERS: ProviderInfo[] = [
   { id: "openrouter", name: "OpenRouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", keyRequired: true, keyUrl: "https://openrouter.ai/keys", logo: "openrouter.svg", streamUsage: true, vision: true, blurb: "Hundreds of models from many labs behind one key." },
   { id: "mistral", name: "Mistral AI", kind: "openai", baseUrl: "https://api.mistral.ai/v1", keyRequired: true, keyUrl: "https://console.mistral.ai/api-keys", logo: "mistral.svg", streamUsage: false, vision: true, blurb: "Mistral and Codestral models." },
   { id: "groq", name: "Groq", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", keyRequired: true, keyUrl: "https://console.groq.com/keys", streamUsage: true, vision: false, blurb: "Open models on very fast inference hardware." },
+  {
+    id: "bedrock-mantle",
+    name: "Amazon Bedrock Mantle",
+    kind: "openai",
+    // Grok / OpenAI-on-Bedrock use /openai/v1; Rex retries /v1 automatically if a model rejects this route.
+    baseUrl: "https://bedrock-mantle.us-west-2.api.aws/openai/v1",
+    keyRequired: true,
+    keyUrl: "https://console.aws.amazon.com/bedrock/home#/api-keys",
+    logo: "bedrock.svg",
+    baseUrlEditable: true,
+    streamUsage: true,
+    vision: true,
+    blurb: "Bedrock Mantle (OpenAI-compatible). Bedrock API key; use /openai/v1 for Grok (and match the key's AWS Region).",
+  },
   { id: "ollama", name: "Ollama", kind: "openai", baseUrl: "http://localhost:11434/v1", keyRequired: false, logo: "ollama.svg", local: true, streamUsage: true, vision: false, blurb: "Models running on this server with Ollama." },
   { id: "lmstudio", name: "LM Studio", kind: "openai", baseUrl: "http://localhost:1234/v1", keyRequired: false, logo: "lmstudio.svg", local: true, streamUsage: false, vision: false, blurb: "Models served by LM Studio's local server." },
   { id: "custom", name: "Other (OpenAI-compatible)", kind: "openai", baseUrl: "", keyRequired: false, streamUsage: false, vision: false, blurb: "Any server that speaks the Chat Completions API." },
