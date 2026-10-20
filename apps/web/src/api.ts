@@ -37,28 +37,13 @@ export const computerSession = (botId: string) => json<ComputerSession>(`/comput
 export const computerSessionState = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/state`);
 export const unlockComputerSession = (botId: string) => json<ComputerSessionState>(`/computer/session/${encodeURIComponent(botId)}/unlock`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 export const computerViewUrl = (viewPath: string) => `${API_BASE}${viewPath}`;
-export const bootstrapComputer = (body: {
-  pveHost: string;
-  node: string;
-  vmid?: number;
-  ipconfig?: string;
-  storage?: string;
-  bridge?: string;
-  memory?: number;
-  cores?: number;
-  disk?: string;
-  pvePassword?: string;
-  pveSshKey?: string;
-  writeEnv?: boolean;
-}) => json<{
-  ok: true;
-  vmid: number;
-  guestIp: string;
-  tokenId: string;
-  envPath: string;
-  status: ComputerStatus;
-  log: string[];
-}>("/computer/bootstrap", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export interface TemplateState {
+  host: { qemu: string | null; qemuImg: string | null; isoTool: string | null; ssh: boolean; kvm: boolean; accel: "kvm" | "tcg"; problems: string[] };
+  template: { version: number; builtAt: string; sizeBytes: number; baseImage: string } | null;
+  build: { running: boolean; log: string[]; error: string | null; startedAt: string | null; finishedAt: string | null };
+}
+export const computerTemplate = () => json<TemplateState>("/computer/template");
+export const buildComputerTemplate = () => json<TemplateState["build"]>("/computer/template/build", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 export const reactToMessage = (id: string, emoji: ReactionEmoji) => json<{ reactions: MessageReaction[] }>(`/messages/${encodeURIComponent(id)}/reactions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emoji }) });
 
 export function listConversations() {

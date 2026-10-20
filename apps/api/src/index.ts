@@ -20,7 +20,7 @@ import { groupRoutes } from "./routes/groups.js";
 import { activeChats } from "./groups.js";
 import { voiceRoutes } from "./routes/voice.js";
 import type { Server } from "node:http";
-import { computer, isDesktopComputer } from "./computer.js";
+import { computers } from "./computer.js";
 import { attachVncProxy } from "./computer/vncProxy.js";
 
 const app = new Hono();
@@ -90,5 +90,5 @@ app.post("/messages/:id/reactions", async (c) => {
 
 console.log(`Rex API listening on http://localhost:${port}`);
 const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
-// Resolve through the live binding so /computer/bootstrap can hot-swap the backend.
-attachVncProxy(server as Server, (token) => (isDesktopComputer(computer) ? computer.resolveView(token) : null), () => allowedOrigins);
+attachVncProxy(server as Server, (token) => computers.resolveView(token), () => allowedOrigins);
+computers.startIdleWatch();

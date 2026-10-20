@@ -1,15 +1,27 @@
 import { randomBytes } from "node:crypto";
+import net from "node:net";
 import type { ChildProcess } from "node:child_process";
 import { COMPUTER_INPUT_ACTIONS, type ComputerInputAction, type ComputerResult, type ComputerSession, type ComputerSessionState, type ComputerStatus } from "@rex/shared";
-import type { PveClient } from "./pve.js";
 import type { SshRunner, TunnelOpener } from "./ssh.js";
 
 const BOT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /** Manual commands from the panel without a bot run in the shared folder. */
 export const OWNER_SESSION = "owner";
 
-export interface ProxmoxComputerOptions {
-  tunnelBasePort?: number;
+/** Power control for the VM that hosts the bot screens. QEMU implements it; tests use a fake. */
+export interface VmPower {
+  /** Short human label, e.g. "QEMU VM rex-u1". */
+  readonly label: string;
+  state(): Promise<VmState>;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+}
+
+export type VmState = "running" | "stopped" | "missing" | "starting" | "stopping";
+
+export interface DesktopComputerOptions {
+  /** Returns a free loopback port for an SSH tunnel to a guest noVNC port. */
+  allocatePort?: () => Promise<number>;
   lockIdleMs?: number;
   bootTimeoutMs?: number;
   viewTokenMs?: number;
@@ -31,6 +43,17 @@ interface ViewToken {
   botId: string;
   localPort: number;
   expires: number;
+}
+
+export function freeLoopbackPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const port = (server.address() as net.AddressInfo).port;
+      server.close(() => resolve(port));
+    });
+  });
 }
 
 function assertBotId(botId: string) {
@@ -75,26 +98,28 @@ export function validateInput(value: unknown): ComputerInputAction {
   return result;
 }
 
-export class ProxmoxComputer {
-  readonly kind = "proxmox" as const;
+export class DesktopComputer {
+  readonly kind = "qemu" as const;
   readonly desktop = true;
   private readonly sessions = new Map<string, GuestSession>();
-  private readonly tunnels = new Map<number, ChildProcess>();
+  private readonly tunnels = new Map<number, { localPort: number; process: ChildProcess }>();
   private readonly viewTokens = new Map<string, ViewToken>();
   private readonly lockTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly busyBots = new Set<string>();
   private booting: Promise<void> | null = null;
   private stopping = false;
-  private readonly options: Required<ProxmoxComputerOptions>;
+  private readonly options: Required<DesktopComputerOptions>;
+  /** Last time a bot or the owner used this computer; drives idle shutdown. */
+  lastUsed = Date.now();
 
   constructor(
-    private readonly pve: PveClient,
+    readonly vm: VmPower,
     private readonly ssh: SshRunner,
     private readonly openTunnel: TunnelOpener,
-    options: ProxmoxComputerOptions = {},
+    options: DesktopComputerOptions = {},
   ) {
     this.options = {
-      tunnelBasePort: options.tunnelBasePort ?? 46080,
+      allocatePort: options.allocatePort ?? freeLoopbackPort,
       lockIdleMs: options.lockIdleMs ?? 60_000,
       bootTimeoutMs: options.bootTimeoutMs ?? 150_000,
       viewTokenMs: options.viewTokenMs ?? 30 * 60_000,
@@ -119,32 +144,32 @@ export class ProxmoxComputer {
   async status(): Promise<ComputerStatus> {
     const base = { backend: this.kind, desktop: this.desktop, imageReady: true, busy: this.busyBots.size > 0 || Boolean(this.booting) };
     try {
-      const vm = await this.pve.status();
-      const vmRunning = vm.status === "running";
+      const state = await this.vm.state();
+      const vmRunning = state === "running";
       const guestReady = vmRunning ? await this.guestReady() : false;
-      const detail = !vmRunning ? `VM ${this.pve.config.vmid} is ${vm.status}. Start it to give bots their screens.`
-        : guestReady ? `Proxmox VM ${this.pve.config.vmid} · shared by all bots · one screen per bot`
-        : "The VM is on but rex-sessiond is not answering over SSH yet. It may still be booting.";
-      return { ...base, available: true, running: vmRunning && guestReady, vmState: vm.status, guestReady, detail };
+      const detail = state === "missing" ? `${this.vm.label} has not been created yet. It is created on first use.`
+        : !vmRunning ? `${this.vm.label} is ${state}. It starts when a bot needs it.`
+        : guestReady ? `${this.vm.label} · one screen per bot`
+        : `${this.vm.label} is booting. Screens appear when rex-sessiond answers over SSH.`;
+      return { ...base, available: true, running: vmRunning && guestReady, vmState: state, guestReady, detail };
     } catch (error) {
       return { ...base, available: false, running: false, guestReady: false, detail: error instanceof Error ? error.message : String(error) };
     }
   }
 
-  /** Starts the VM through Proxmox if needed and waits until the guest answers over SSH. */
+  /** Starts the VM if needed and waits until the guest answers over SSH. */
   async ensureRunning(): Promise<void> {
     if (this.stopping) throw new Error("Rex Computer is shutting down. Try again shortly.");
     if (this.booting) return this.booting;
     this.booting = (async () => {
-      const vm = await this.pve.status();
-      if (vm.status !== "running") await this.pve.start();
+      if (await this.vm.state() !== "running") { this.reset(); await this.vm.start(); }
       else if (await this.guestReady()) return;
       const deadline = Date.now() + this.options.bootTimeoutMs;
       while (Date.now() < deadline) {
         if (await this.guestReady()) return;
         await new Promise((resolve) => setTimeout(resolve, this.options.pollMs));
       }
-      throw new Error("Rex Computer VM started, but rex-sessiond did not answer over SSH. Check the VM network and SSH key.");
+      throw new Error(`${this.vm.label} started, but rex-sessiond did not answer over SSH in time. Check the serial log in the admin panel.`);
     })().finally(() => { this.booting = null; });
     return this.booting;
   }
@@ -154,27 +179,35 @@ export class ProxmoxComputer {
     return this.status();
   }
 
+  /** Powers the VM off gracefully. Files on its disk are kept. */
   async stop(): Promise<ComputerStatus> {
-    // The shared desktop stays on. Power-off only from Proxmox if you really need it.
-    throw new Error("Rex Computer stays on. There is no shut down from the app.");
+    if (this.busyBots.size) throw new Error("A bot is using Rex Computer. Try again when it finishes.");
+    this.stopping = true;
+    try { this.reset(); await this.vm.stop(); }
+    finally { this.stopping = false; }
+    return this.status();
+  }
+
+  isIdle(idleMs: number) {
+    return !this.busyBots.size && !this.booting && Date.now() - this.lastUsed > idleMs;
   }
 
   private reset() {
     for (const timer of this.lockTimers.values()) clearTimeout(timer);
     this.lockTimers.clear();
-    for (const tunnel of this.tunnels.values()) tunnel.kill();
+    for (const tunnel of this.tunnels.values()) tunnel.process.kill();
     this.tunnels.clear();
     this.viewTokens.clear();
     this.sessions.clear();
   }
 
-  private ensureTunnel(session: GuestSession): number {
-    const localPort = this.options.tunnelBasePort + session.slot;
-    const existing = this.tunnels.get(localPort);
-    if (existing && existing.exitCode === null && !existing.killed) return localPort;
+  private async ensureTunnel(session: GuestSession): Promise<number> {
+    const existing = this.tunnels.get(session.slot);
+    if (existing && existing.process.exitCode === null && !existing.process.killed) return existing.localPort;
+    const localPort = await this.options.allocatePort();
     const tunnel = this.openTunnel(localPort, session.wsPort);
-    tunnel.on("exit", () => { if (this.tunnels.get(localPort) === tunnel) this.tunnels.delete(localPort); });
-    this.tunnels.set(localPort, tunnel);
+    tunnel.on("exit", () => { if (this.tunnels.get(session.slot)?.process === tunnel) this.tunnels.delete(session.slot); });
+    this.tunnels.set(session.slot, { localPort, process: tunnel });
     return localPort;
   }
 
@@ -216,7 +249,7 @@ export class ProxmoxComputer {
 
   async session(botId: string): Promise<ComputerSession> {
     const session = await this.ensureGuestSession(botId);
-    const localPort = this.ensureTunnel(session);
+    const localPort = await this.ensureTunnel(session);
     return this.toSession(session, this.viewTokenFor(botId, localPort));
   }
 
@@ -253,9 +286,10 @@ export class ProxmoxComputer {
 
   private async withBot<T>(botId: string, work: () => Promise<T>): Promise<T> {
     assertBotId(botId);
+    this.lastUsed = Date.now();
     if (this.busyBots.has(botId)) throw new Error("This bot is already using Rex Computer. Wait for its current command to finish.");
     this.busyBots.add(botId);
-    try { return await work(); } finally { this.busyBots.delete(botId); }
+    try { return await work(); } finally { this.busyBots.delete(botId); this.lastUsed = Date.now(); }
   }
 
   async execute(command: string, botId = OWNER_SESSION): Promise<ComputerResult> {

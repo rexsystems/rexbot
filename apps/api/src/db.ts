@@ -119,3 +119,27 @@ db.exec("CREATE INDEX IF NOT EXISTS idx_uploads_message ON uploads(message_id)")
 export function nowIso() {
   return new Date().toISOString();
 }
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS vms (
+    owner_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    ssh_port INTEGER NOT NULL UNIQUE,
+    memory_mb INTEGER NOT NULL,
+    cores INTEGER NOT NULL,
+    disk_gb INTEGER NOT NULL,
+    instance_id TEXT NOT NULL,
+    template_version INTEGER,
+    created_at TEXT NOT NULL,
+    last_started_at TEXT
+  );
+`);
+
+export function dataDirectory() {
+  return dataDir;
+}

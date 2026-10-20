@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Runs inside the rex-computer VM as root (install-guest.sh does this over SSH).
+# Runs inside a Rex Computer template VM as root. The API copies this folder in and runs it
+# while building the QEMU template (Admin → Computers → Build image).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -7,11 +8,10 @@ export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
 apt-get install -y --no-install-recommends \
-  qemu-guest-agent openssh-server python3 python3-pip python3-venv git curl ca-certificates \
+  openssh-server cloud-guest-utils python3 python3-pip python3-venv git curl ca-certificates \
   xvfb openbox tint2 x11vnc novnc websockify xdotool wmctrl scrot xclip x11-xserver-utils \
   xterm chromium firefox-esr dbus-x11 procps \
   fonts-dejavu-core fonts-noto-color-emoji
-systemctl enable --now qemu-guest-agent || true
 
 install -m 0755 "$HERE/rex-sessiond" /usr/local/bin/rex-sessiond
 install -m 0755 "$HERE/rex-browser" /usr/local/bin/rex-browser

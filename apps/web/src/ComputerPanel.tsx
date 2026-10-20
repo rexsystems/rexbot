@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ActionIcon, Alert, Button, Group, Loader, Modal, NumberInput, PasswordInput, ScrollArea, Stack, Text, TextInput } from "@mantine/core";
+import { ActionIcon, Alert, Button, Group, Loader, Modal, ScrollArea, Stack, Text } from "@mantine/core";
 import type { ComputerSession, ComputerStatus } from "@rex/shared";
 import * as api from "./api";
 import { IconCollapse, IconComputer } from "./icons";
@@ -30,11 +30,9 @@ export function ComputerPanel({
     try {
       let next = await api.computerStatus();
       // Keep the VM up. No shutdown control in the UI.
-      if (next.desktop && next.available && !next.running && next.vmState !== "running") {
+      if (next.desktop && next.available && !next.running && (next.vmState === "stopped" || next.vmState === "missing")) {
         try { next = await api.startComputer(); }
         catch (err) { setError(errorText(err)); }
-      } else if (next.desktop && next.available && !next.running && next.vmState === "running") {
-        // Guest still booting — status alone is enough; session open waits.
       }
       setStatus(next);
       onStatus?.(next);
@@ -56,76 +54,64 @@ export function ComputerPanel({
         <ActionIcon aria-label="Close computer" title="Collapse computer" size={44} variant="subtle" onClick={onClose}><IconCollapse /></ActionIcon>
       </Group>
       <ScrollArea className="computer-panel-scroll" offsetScrollbars>
-        {status?.desktop
+        {status?.desktop && status.available
           ? <DesktopScreen status={status} error={error} active={active} bots={bots} focusBotId={focusBotId} />
-          : <SetupBody error={error} refresh={refresh} />}
+          : <SetupBody status={status} error={error} refresh={refresh} />}
       </ScrollArea>
     </section>
   );
 }
 
-function SetupBody({ error, refresh }: { error: string | null; refresh: () => Promise<void> }) {
+function SetupBody({ status, error, refresh }: { status: ComputerStatus | null; error: string | null; refresh: () => Promise<void> }) {
+  if (!status) {
+    return error ? <Alert color="red" title="Computer error" role="alert">{error}</Alert> : <div className="computer-screen computer-screen-empty"><Loader role="status" aria-label="Checking computer" /></div>;
+  }
+  if (status.setupNeeded) return <ImageSetup detail={status.detail} refresh={refresh} />;
   return (
-    <Stack gap="lg">
-      <Stack gap={6}>
-        <Text fw={600} size="lg">Create the computer</Text>
-        <Text c="dimmed" size="sm">Once. Makes one VM named rex-computer on your Proxmox. After that it stays on and each bot gets its own screen.</Text>
-      </Stack>
+    <Stack gap="md">
       {error ? <Alert color="red" title="Computer error" role="alert">{error}</Alert> : null}
-      <BootstrapForm onDone={refresh} />
+      <Alert color="orange" title="Rex Computer is unavailable">{status.detail}</Alert>
+      <Text size="sm" c="dimmed">The server needs QEMU to give bots a computer. The setup guide is in docs/qemu-computer.md.</Text>
     </Stack>
   );
 }
 
-function BootstrapForm({ onDone }: { onDone: () => Promise<void> }) {
-  const [pveHost, setPveHost] = useState("192.168.100.25");
-  const [node, setNode] = useState("origin-mur-1");
-  const [vmid, setVmid] = useState<number | "">(180);
-  const [storage, setStorage] = useState("hdd1");
-  const [ipconfig, setIpconfig] = useState("ip=192.168.100.50/24,gw=192.168.100.1");
-  const [password, setPassword] = useState("");
-  const [pending, setPending] = useState(false);
+/** First-run state: the shared desktop image has not been built on this server yet. */
+function ImageSetup({ detail, refresh }: { detail: string; refresh: () => Promise<void> }) {
+  const [build, setBuild] = useState<api.TemplateState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [log, setLog] = useState<string[]>([]);
+  const running = build?.build.running ?? false;
 
-  async function submit() {
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => api.computerTemplate().then((next) => { if (!cancelled) setBuild(next); }).catch((err) => { if (!cancelled) setError(errorText(err)); });
+    void poll();
+    const timer = window.setInterval(() => void poll(), running ? 2000 : 8000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [running]);
+
+  useEffect(() => { if (build?.template) void refresh(); }, [build?.template?.version]);
+
+  async function start() {
     setError(null);
-    setPending(true);
-    setLog(["Creating the computer…"]);
-    try {
-      const result = await api.bootstrapComputer({
-        pveHost,
-        node,
-        vmid: typeof vmid === "number" ? vmid : undefined,
-        ipconfig,
-        storage,
-        bridge: "vmbr0",
-        pvePassword: password || undefined,
-      });
-      setLog(result.log);
-      setPassword("");
-      await onDone();
-    } catch (err) { setError(errorText(err)); }
-    finally { setPending(false); }
+    try { await api.buildComputerTemplate(); setBuild(await api.computerTemplate()); }
+    catch (err) { setError(errorText(err)); }
   }
 
+  const problems = build?.host.problems ?? [];
+  const blocking = problems.filter((problem) => !problem.startsWith("/dev/kvm"));
   return (
-    <Stack gap="md" className="computer-setup-card">
-      <TextInput label="Proxmox host" value={pveHost} onChange={(event) => setPveHost(event.currentTarget.value)} required />
-      <PasswordInput label="Root password" description="Once, not saved. Empty if this PC already has SSH as root." value={password} onChange={(event) => setPassword(event.currentTarget.value)} />
-      <details className="computer-isolation">
-        <summary>Advanced</summary>
-        <Stack gap="sm" mt="sm">
-          <TextInput label="Node" value={node} onChange={(event) => setNode(event.currentTarget.value)} />
-          <NumberInput label="VMID" value={vmid} onChange={(value) => setVmid(typeof value === "number" ? value : "")} min={100} allowDecimal={false} />
-          <TextInput label="Storage" value={storage} onChange={(event) => setStorage(event.currentTarget.value)} />
-          <TextInput label="Guest network" value={ipconfig} onChange={(event) => setIpconfig(event.currentTarget.value)} />
-        </Stack>
-      </details>
-      {error ? <Alert color="red" title="Setup failed" role="alert">{error}</Alert> : null}
-      {log.length ? <div className="computer-output" aria-live="polite"><pre>{log.join("\n")}</pre></div> : null}
-      <Button size="md" loading={pending} disabled={!pveHost.trim() || !node.trim()} onClick={() => void submit()}>
-        {pending ? "Creating…" : "Create computer"}
+    <Stack gap="lg">
+      <Stack gap={6}>
+        <Text fw={600} size="lg">Build the computer image</Text>
+        <Text c="dimmed" size="sm">{detail} Building downloads a Debian cloud image and installs a desktop into it once. After that, every account gets its own VM from this image in seconds.</Text>
+      </Stack>
+      {problems.map((problem) => <Alert key={problem} color={problem.startsWith("/dev/kvm") ? "yellow" : "red"} variant="light">{problem}</Alert>)}
+      {error ? <Alert color="red" title="Build failed to start" role="alert">{error}</Alert> : null}
+      {build?.build.error && !running ? <Alert color="red" title="Last build failed" role="alert">{build.build.error}</Alert> : null}
+      {build?.build.log.length ? <div className="computer-output" aria-live="polite"><pre>{build.build.log.slice(-14).join("\n")}</pre></div> : null}
+      <Button size="md" loading={running} disabled={running || blocking.length > 0 || !build} onClick={() => void start()}>
+        {running ? "Building image…" : build?.build.error ? "Retry build" : "Build image"}
       </Button>
     </Stack>
   );
@@ -184,7 +170,7 @@ function DesktopScreen({
       {!ready ? (
         <div className="computer-screen computer-screen-empty">
           <Loader role="status" aria-label="Starting computer" />
-          <Text size="sm" c="dimmed" mt="sm">Starting…</Text>
+          <Text size="sm" c="dimmed" mt="sm" ta="center" maw={320}>{status.vmState === "running" ? "Booting. The first start of a new computer takes about a minute." : "Starting your computer…"}</Text>
         </div>
       ) : sessionError ? (
         <Alert color="orange" title="Screen not available">{sessionError}</Alert>

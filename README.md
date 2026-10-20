@@ -1,6 +1,6 @@
 # Rexbot
 
-Customizable AI bots with real 3D avatars, image attachments, persistent conversations, and a computer for bots: a local Podman sandbox, or a shared Proxmox VM where every bot has its own desktop.
+Customizable AI bots with real 3D avatars, image attachments, persistent conversations, and a computer for bots: every account gets its own QEMU virtual machine, and every bot gets its own desktop on it.
 
 Built by [RexSystems](https://github.com/rexsystems). Runs in your browser or a Tauri desktop window, with **React, Mantine, Hugeicons, Three.js, Hono, and SQLite**.
 
@@ -66,24 +66,29 @@ For voice, open an individual bot, click the microphone, and choose **Start call
 
 The local API issues a one-use Google ephemeral token, locked to the bot's setup and valid for ten minutes. The browser streams 16 kHz PCM and plays Google's PCM responses directly over the [Live WebSocket API](https://ai.google.dev/gemini-api/docs/live-api/get-started-websocket). It sends the last 20 chat messages, attachment metadata, up to eight recent memories, and the bot's profile/rules as context. Raw audio is not saved by Rexbot; transcripts and completed tool activity are saved in the bot's chat. Google receives the audio and context. Model access, quota, and billing depend on your Google account.
 
-Live sessions may run the existing search, fetch, attachment, computer, and teammate tools. A call permits 24 tool calls and six private teammate requests; the Podman computer must be started by the user, while the Proxmox VM starts on demand. In-flight tool work may finish after a call ends and remains in the activity history. Start a new call after a connection or session expires. No system packages or Google SDK installation are required.
+Live sessions may run the existing search, fetch, attachment, computer, and teammate tools. A call permits 24 tool calls and six private teammate requests; the QEMU computer starts on demand (the Podman sandbox must be started by the user). In-flight tool work may finish after a call ends and remains in the activity history. Start a new call after a connection or session expires. No system packages or Google SDK installation are required.
 
 ## Rex Computer
 
-Rex Computer has two backends. **Podman** (the default) is an offline Python and shell sandbox on this machine. **Proxmox** is one shared VM where every bot gets its own small desktop, mouse and keyboard tools, and a persistent workspace. The API uses Proxmox when `REX_PROXMOX_URL` is set; force one with `REX_COMPUTER_BACKEND=podman` or `REX_COMPUTER_BACKEND=proxmox`.
+Rex Computer has two backends. **QEMU** (the default) gives every account its own Linux VM, run directly by QEMU on the Rex server, where every bot has its own desktop, mouse and keyboard tools, and a persistent workspace. **Podman** is an offline Python and shell sandbox. Choose with `REX_COMPUTER_BACKEND=qemu` or `REX_COMPUTER_BACKEND=podman`.
 
-### Proxmox desktop
+### QEMU desktop
 
-Open the computer panel → **Set up Proxmox desktop**, or call `POST /computer/bootstrap`. Rex creates the `rex-computer` VM, a token limited to that VM, provisions the guest, and writes `.env`. Details: [scripts/proxmox-rex-computer.md](scripts/proxmox-rex-computer.md). Rex never acts on a VM with a different name.
+```bash
+scripts/qemu/setup-host.sh       # QEMU, qemu-img, cloud-image-utils, ssh; checks /dev/kvm
+pnpm --filter api build-image     # or open the computer panel → Build image
+```
 
-- Every bot gets its own 1280×800 screen (Openbox and a taskbar) on the same VM. The computer panel shows the current bot's screen; in a group, pick a member's screen.
+The image build downloads the Debian 13 cloud image, installs the desktop once, and stores it as a template. Each account's VM is a copy-on-write overlay of that template, created in seconds on first use. How it works, settings, and the security model: [docs/qemu-computer.md](docs/qemu-computer.md).
+
+- Every bot gets its own 1280×800 screen (Openbox and a taskbar) on its owner's VM. The computer panel shows the current bot's screen; in a group, pick a member's screen.
 - Bots get `computer_exec` (bash as `rex` in `/workspace/bots/<bot>`, with `DISPLAY` and passwordless sudo so they can `apt install` and set things up), `computer_input` (move, click, type, key combos, scroll), and `computer_screenshot` (saves a PNG and lists open windows; the model does not see pixels).
 - While a bot uses the mouse or keyboard, its screen is view-only for you. It unlocks after a minute of inactivity, or when you press **Take control**.
-- Files in `/workspace` survive restarts. `/workspace/shared` is visible to all bots as `./shared`.
-- Bots start the VM when they need it. **Shut down VM** powers it off gracefully.
+- Files in `/workspace` survive restarts. `/workspace/shared` is visible to all of the account's bots as `./shared`.
+- VMs start when a bot needs them and keep running across API restarts. An admin can enable idle shutdown.
 - The screen streams through the Rex API over SSH; noVNC only listens on the VM's localhost.
 
-The VM has normal network access, and every bot runs as the same Linux user, so bots can read each other's folders. Use the Proxmox firewall if the VM should not reach your LAN.
+The VM has outbound network access, and an account's bots run as the same Linux user, so they can read each other's folders. Accounts never share a VM.
 
 ### Podman sandbox
 
@@ -111,7 +116,7 @@ Use the **computer icon at the top right of the conversation**, then choose **St
 
 The container runs as a non-root user with all capabilities dropped, no new privileges, a read-only operating system, **no network**, no host directory mounts, and no container-engine socket. A timed-out command removes the entire container, including child processes. **Stop & erase workspace** deletes its temporary files.
 
-All bots share one Podman computer. Hiding the drawer does not stop it. Containers share the host kernel and are not virtual machines. This is a Python/shell workspace without a desktop; use the Proxmox backend for screens.
+Each account has its own Podman computer. Hiding the drawer does not stop it. Containers share the host kernel and are not virtual machines. This is a Python/shell workspace without a desktop; use the QEMU backend for screens.
 
 ## Images and attachments
 
@@ -132,17 +137,18 @@ pnpm dev:api
 pnpm dev:desktop
 ```
 
-The desktop shell uses the same interface and local API as the browser version. The Podman computer backend expects a Linux host with rootless Podman; the Proxmox backend needs the `ssh` client.
+The desktop shell uses the same interface and local API as the browser version. The computer backends run on the Rex API host: QEMU needs a Linux host (KVM recommended) with the `ssh` client; Podman needs rootless Podman.
 
 ## Development
 
 | Directory | Responsibility |
 | --- | --- |
 | `apps/web` | React, Mantine, Hugeicons, image composer, shared Three.js avatar renderer |
-| `apps/api` | Hono API, streaming model tools, SQLite, file storage, Podman lifecycle |
+| `apps/api` | Hono API, streaming model tools, SQLite, file storage, QEMU and Podman computers |
 | `apps/desktop` | Tauri desktop shell |
 | `packages/shared` | Types, bot profiles, tool definitions, and system prompt |
-| `docs` | UI validation and screenshots |
+| `scripts/guest`, `scripts/qemu` | Guest desktop setup (`rex-sessiond`) and QEMU host setup |
+| `docs` | QEMU computer guide, UI validation, screenshots |
 
 ```bash
 pnpm build

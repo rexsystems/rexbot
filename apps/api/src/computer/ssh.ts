@@ -1,6 +1,4 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
 
 const OUTPUT_LIMIT = 40_000;
 
@@ -20,23 +18,6 @@ export interface SshResult {
 
 export type SshRunner = (remoteArgs: string[], input: string | undefined, timeoutMs: number) => Promise<SshResult>;
 export type TunnelOpener = (localPort: number, remotePort: number) => ChildProcess;
-
-function expandHome(file: string) {
-  return file.startsWith("~/") ? path.join(os.homedir(), file.slice(2)) : file;
-}
-
-export function sshConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SshConfig {
-  const host = env.REX_COMPUTER_SSH_HOST?.trim();
-  if (!host) throw new Error("Proxmox computer is missing REX_COMPUTER_SSH_HOST (the VM's IP address).");
-  const port = Number(env.REX_COMPUTER_SSH_PORT || 22);
-  return {
-    host,
-    user: env.REX_COMPUTER_SSH_USER?.trim() || "rex",
-    port: Number.isInteger(port) && port > 0 ? port : 22,
-    keyFile: env.REX_COMPUTER_SSH_KEY?.trim() ? expandHome(env.REX_COMPUTER_SSH_KEY.trim()) : undefined,
-    knownHostsFile: env.REX_COMPUTER_SSH_KNOWN_HOSTS?.trim() ? expandHome(env.REX_COMPUTER_SSH_KNOWN_HOSTS.trim()) : undefined,
-  };
-}
 
 function baseArgs(config: SshConfig) {
   return [

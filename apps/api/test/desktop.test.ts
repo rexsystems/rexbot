@@ -5,25 +5,20 @@ import http from "node:http";
 import net from "node:net";
 import type { AddressInfo } from "node:net";
 import type { ChildProcess } from "node:child_process";
-import { PveClient, pveConfigFromEnv, type PveConfig, type PveRequester } from "../src/computer/pve.js";
-import { ProxmoxComputer, validateInput } from "../src/computer/proxmox.js";
+import { DesktopComputer, validateInput, type VmPower, type VmState } from "../src/computer/desktop.js";
 import type { SshResult, SshRunner, TunnelOpener } from "../src/computer/ssh.js";
 import { attachVncProxy, parseVncPath, proxyVncHttp } from "../src/computer/vncProxy.js";
 
-const config: PveConfig = { url: "https://pve.test:8006", node: "pve", vmid: 180, vmName: "rex-computer", tokenId: "rex@pve!rex", tokenSecret: "secret" };
-
-function fakePve(name = "rex-computer") {
+function fakeVm() {
   const calls: string[] = [];
-  let state = "stopped";
-  const requester: PveRequester = async (method, path) => {
-    calls.push(`${method} ${path}`);
-    if (path.endsWith("/config")) return { name };
-    if (path.endsWith("/status/current")) return { status: state, name };
-    if (path.endsWith("/status/start")) { state = "running"; return "UPID:start"; }
-    if (path.endsWith("/status/shutdown")) { state = "stopped"; return "UPID:shutdown"; }
-    throw new Error(`unexpected ${method} ${path}`);
+  let state: VmState = "stopped";
+  const vm: VmPower = {
+    label: "Test VM",
+    state: async () => { calls.push("state"); return state; },
+    start: async () => { calls.push("start"); state = "running"; },
+    stop: async () => { calls.push("stop"); state = "stopped"; },
   };
-  return { calls, requester, setState: (next: string) => { state = next; } };
+  return { calls, vm, setState: (next: VmState) => { state = next; } };
 }
 
 function fakeGuest() {
@@ -55,41 +50,37 @@ function fakeGuest() {
   return { calls, ssh, tunnels, openTunnel };
 }
 
-function computerWith(pve = fakePve(), guest = fakeGuest(), lockIdleMs = 60_000) {
-  return { pve, guest, computer: new ProxmoxComputer(new PveClient(config, pve.requester), guest.ssh, guest.openTunnel, { pollMs: 1, bootTimeoutMs: 200, lockIdleMs }) };
+function computerWith(vm = fakeVm(), guest = fakeGuest(), lockIdleMs = 60_000) {
+  let port = 46_080;
+  return { vm, guest, computer: new DesktopComputer(vm.vm, guest.ssh, guest.openTunnel, { pollMs: 1, bootTimeoutMs: 200, lockIdleMs, allocatePort: async () => port++ }) };
 }
 
-test("env config requires the scoped VM settings", () => {
-  assert.equal(pveConfigFromEnv({}), null);
-  assert.throws(() => pveConfigFromEnv({ REX_PROXMOX_URL: "https://pve:8006", REX_PROXMOX_VMID: "5" }), /REX_PROXMOX_NODE.*REX_PROXMOX_VMID/);
-  const parsed = pveConfigFromEnv({ REX_PROXMOX_URL: "https://pve:8006/", REX_PROXMOX_NODE: "pve", REX_PROXMOX_VMID: "180", REX_PROXMOX_TOKEN_ID: "a@pve!b", REX_PROXMOX_TOKEN_SECRET: "s" });
-  assert.equal(parsed?.url, "https://pve:8006");
-  assert.equal(parsed?.vmName, "rex-computer");
-  assert.throws(() => pveConfigFromEnv({ REX_PROXMOX_URL: "https://pve:8006", REX_PROXMOX_NODE: "pve", REX_PROXMOX_VMID: "180", REX_PROXMOX_TOKEN_ID: "root@pam!blana", REX_PROXMOX_TOKEN_SECRET: "s" }), /Refuse Proxmox token/);
-});
-
-test("refuses to control a VM with another name", async () => {
-  const pve = fakePve("homeassistant");
-  const client = new PveClient(config, pve.requester);
-  await assert.rejects(client.start(), /named "homeassistant".*will not control it/);
-  assert.ok(pve.calls.every((call) => call.startsWith("GET")), "no power action may be sent");
-});
-
-test("starts the VM on demand and only touches the configured VMID", async () => {
-  const { pve, computer } = computerWith();
+test("starts the VM on demand and powers it off on request", async () => {
+  const { vm, computer } = computerWith();
   assert.equal((await computer.status()).running, false);
   const status = await computer.start();
   assert.equal(status.running, true);
   assert.equal(status.desktop, true);
-  assert.ok(pve.calls.includes("POST /nodes/pve/qemu/180/status/start"));
-  assert.ok(pve.calls.every((call) => call.includes("/nodes/pve/qemu/180/")));
-  await assert.rejects(computer.stop(), /stays on/);
-  assert.ok(!pve.calls.some((call) => call.includes("shutdown")));
+  assert.equal(status.backend, "qemu");
+  assert.equal(vm.calls.filter((call) => call === "start").length, 1);
+  await computer.start();
+  assert.equal(vm.calls.filter((call) => call === "start").length, 1, "a running VM is not started twice");
+  const stopped = await computer.stop();
+  assert.equal(stopped.running, false);
+  assert.ok(vm.calls.includes("stop"));
+});
+
+test("idle detection ignores busy computers", async () => {
+  const { computer } = computerWith();
+  await computer.start();
+  computer.lastUsed = Date.now() - 10_000;
+  assert.equal(computer.isIdle(5_000), true);
+  assert.equal(computer.isIdle(60_000), false);
 });
 
 test("each bot gets its own screen, tunnel and view token", async () => {
-  const { pve, guest, computer } = computerWith();
-  pve.setState("running");
+  const { vm, guest, computer } = computerWith();
+  vm.setState("running");
   const first = await computer.session("bot_a");
   const second = await computer.session("bot_b");
   assert.notEqual(first.slot, second.slot);
@@ -103,8 +94,8 @@ test("each bot gets its own screen, tunnel and view token", async () => {
 });
 
 test("commands run in the bot's session with text only on stdin", async () => {
-  const { pve, guest, computer } = computerWith();
-  pve.setState("running");
+  const { vm, guest, computer } = computerWith();
+  vm.setState("running");
   const result = await computer.execute("echo 'hi; rm -rf /'", "bot_a");
   assert.equal(result.exitCode, 0);
   const exec = guest.calls.find((call) => call.args[1] === "exec")!;
@@ -115,8 +106,8 @@ test("commands run in the bot's session with text only on stdin", async () => {
 });
 
 test("mouse input locks the screen and the lock expires", async () => {
-  const { pve, guest, computer } = computerWith(undefined, undefined, 40);
-  pve.setState("running");
+  const { vm, guest, computer } = computerWith(undefined, undefined, 40);
+  vm.setState("running");
   await computer.input("bot_a", { action: "click", x: 10, y: 20 });
   assert.equal(computer.sessionState("bot_a").locked, true);
   assert.equal(computer.sessionState("bot_b").locked, false);
@@ -127,8 +118,8 @@ test("mouse input locks the screen and the lock expires", async () => {
 });
 
 test("one action at a time per bot", async () => {
-  const { pve, computer } = computerWith();
-  pve.setState("running");
+  const { vm, computer } = computerWith();
+  vm.setState("running");
   const first = computer.execute("echo one", "bot_a");
   await assert.rejects(computer.execute("echo two", "bot_a"), /already using/);
   await computer.execute("echo three", "bot_b");

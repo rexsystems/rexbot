@@ -27,7 +27,7 @@ export interface MessageReaction {
   emoji: ReactionEmoji;
 }
 
-export type ComputerBackendKind = "podman" | "proxmox";
+export type ComputerBackendKind = "podman" | "qemu";
 
 export interface ComputerStatus {
   available: boolean;
@@ -38,8 +38,10 @@ export interface ComputerStatus {
   backend?: ComputerBackendKind;
   /** True when bots get their own screens and mouse/keyboard tools. */
   desktop?: boolean;
-  /** Proxmox power state of the VM, e.g. "running" or "stopped". */
+  /** VM power state: running, stopped, missing, starting or stopping. */
   vmState?: string;
+  /** True when the QEMU computer image has not been built yet. */
+  setupNeeded?: boolean;
   /** Guest session manager answered over SSH. */
   guestReady?: boolean;
 }
@@ -206,3 +208,31 @@ export interface UploadMeta {
   size: number;
   createdAt: string;
 }
+
+/** Workspace settings controlled from the admin panel. */
+export interface AppSettings {
+  /** open: anyone can create an account. closed: only admins add people. */
+  signupMode: "open" | "closed";
+  workspaceName: string;
+  vmMemoryMb: number;
+  vmCores: number;
+  vmDiskGb: number;
+  /** Minutes without bot or user activity before a VM is powered off. 0 keeps VMs on. */
+  vmIdleMinutes: number;
+  vmMaxRunning: number;
+  maxBotsPerUser: number;
+  /** Users without their own provider connection may use the admin's workspace connections. */
+  shareWorkspaceKeys: boolean;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  signupMode: "closed",
+  workspaceName: "Rex",
+  vmMemoryMb: 4096,
+  vmCores: 2,
+  vmDiskGb: 32,
+  vmIdleMinutes: 0,
+  vmMaxRunning: 4,
+  maxBotsPerUser: 50,
+  shareWorkspaceKeys: false,
+};

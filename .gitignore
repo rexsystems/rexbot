@@ -22,3 +22,4 @@ packages/shared/dist
 .vite
 apps/web/test-results
 apps/web/playwright-report
+__pycache__/

@@ -3,7 +3,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { isPreviewImage, type ClientSettings } from "@rex/shared";
 import { db } from "../db.js";
-import { computer, isDesktopComputer } from "../computer.js";
+import { computers, isDesktopComputer, LOCAL_OWNER } from "../computer.js";
 import { isReaction, setReaction } from "../reactions.js";
 import type { MessagingContext } from "../botMessaging.js";
 
@@ -147,7 +147,7 @@ export async function runTool(
   name: string,
   argsJson: string,
   settings: ClientSettings,
-  context?: { userMessageId: string } & Partial<MessagingContext>,
+  context?: { userMessageId: string; ownerId?: string } & Partial<MessagingContext>,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -157,6 +157,7 @@ export async function runTool(
     return `Invalid tool arguments JSON for ${name}`;
   }
 
+  const computer = () => computers.forOwner(context?.ownerId ?? LOCAL_OWNER);
   switch (name) {
     case "message_bot": {
       if (!context?.botId || !context.budget) return "message_bot unavailable in this context.";
@@ -166,18 +167,19 @@ export async function runTool(
     case "computer_exec": {
       try {
         if (typeof args.command !== "string") return "computer_exec requires a command string.";
-        return JSON.stringify(await computer.execute(args.command, context?.botId));
+        return JSON.stringify(await computer().execute(args.command, context?.botId));
       } catch (err) {
         return `computer_exec failed: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
     case "computer_input":
     case "computer_screenshot": {
-      if (!isDesktopComputer(computer)) return `${name} unavailable: this computer has no screen.`;
+      const desktop = computer();
+      if (!isDesktopComputer(desktop)) return `${name} unavailable: this computer has no screen.`;
       if (!context?.botId) return `${name} unavailable: only bots have a screen.`;
       try {
-        if (name === "computer_screenshot") return await computer.screenshot(context.botId);
-        return await computer.input(context.botId, args);
+        if (name === "computer_screenshot") return await desktop.screenshot(context.botId);
+        return await desktop.input(context.botId, args);
       } catch (err) {
         return `${name} failed: ${err instanceof Error ? err.message : String(err)}`;
       }

@@ -1,6 +1,5 @@
 import { Hono } from "hono";
-import { computer, isDesktopComputer } from "../computer.js";
-import { BootstrapBusyError, bootstrapComputer, type BootstrapRequest } from "../computer/bootstrap.js";
+import { computers, isDesktopComputer, LOCAL_OWNER } from "../computer.js";
 import { proxyVncHttp } from "../computer/vncProxy.js";
 import { getConversation } from "../conversations.js";
 
@@ -13,38 +12,15 @@ function knownBot(id: string) {
   return Boolean(conversation?.bot && !conversation.kind);
 }
 
+const ownerComputer = () => computers.forOwner(LOCAL_OWNER);
+
 export const computerRoutes = new Hono();
-computerRoutes.get("/computer", async (c) => c.json(await computer.status()));
+computerRoutes.get("/computer", async (c) => c.json(await ownerComputer().status()));
 
-/** One-shot Proxmox setup. Bound to localhost only (see index.ts). Password is never written to disk. */
-computerRoutes.post("/computer/bootstrap", async (c) => {
-  let body: BootstrapRequest;
-  try { body = await c.req.json() as BootstrapRequest; }
-  catch { return c.json({ error: "Invalid JSON" }, 400); }
-  try {
-    const result = await bootstrapComputer(body);
-    return c.json({
-      ok: true,
-      vmid: result.vmid,
-      guestIp: result.guestIp,
-      tokenId: result.tokenId,
-      envPath: result.envPath,
-      status: result.status,
-      log: result.log,
-    });
-  } catch (err) {
-    const status = err instanceof BootstrapBusyError ? 409 : 400;
-    return c.json({ error: errorMessage(err) }, status);
-  }
-});
-
-computerRoutes.get("/computer/vnc/:token/*", (c) => {
-  if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
-  const desktop = computer;
-  return proxyVncHttp(c.req.raw, (token) => desktop.resolveView(token));
-});
+computerRoutes.get("/computer/vnc/:token/*", (c) => proxyVncHttp(c.req.raw, (token) => computers.resolveView(token)));
 
 computerRoutes.get("/computer/session/:botId", async (c) => {
+  const computer = ownerComputer();
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
   const botId = c.req.param("botId");
   if (!knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
@@ -53,6 +29,7 @@ computerRoutes.get("/computer/session/:botId", async (c) => {
 });
 
 computerRoutes.get("/computer/session/:botId/state", (c) => {
+  const computer = ownerComputer();
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
   const botId = c.req.param("botId");
   if (!knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
@@ -60,6 +37,7 @@ computerRoutes.get("/computer/session/:botId/state", (c) => {
 });
 
 computerRoutes.post("/computer/session/:botId/:action", async (c) => {
+  const computer = ownerComputer();
   if (!isDesktopComputer(computer)) return c.json({ error: "This computer has no screen." }, 404);
   const botId = c.req.param("botId");
   if (!knownBot(botId)) return c.json({ error: "Bot not found." }, 404);
@@ -72,13 +50,11 @@ computerRoutes.post("/computer/session/:botId/:action", async (c) => {
 });
 
 computerRoutes.post("/computer/:action", async (c) => {
+  const computer = ownerComputer();
   try {
     const action = c.req.param("action");
     if (action === "start") return c.json(await computer.start());
-    if (action === "stop") {
-      if (isDesktopComputer(computer)) return c.json({ error: "Rex Computer stays on. There is no shut down from the app." }, 400);
-      return c.json(await computer.stop());
-    }
+    if (action === "stop") return c.json(await computer.stop());
     if (action === "exec") {
       const body = await c.req.json() as { command?: unknown; botId?: unknown };
       const botId = typeof body.botId === "string" && body.botId ? body.botId : undefined;
@@ -90,3 +66,7 @@ computerRoutes.post("/computer/:action", async (c) => {
     return c.json({ error: errorMessage(err) }, 400);
   }
 });
+
+/** Image build controls. Admin-only once accounts exist. */
+computerRoutes.get("/computer/template", (c) => c.json(computers.templateInfo()));
+computerRoutes.post("/computer/template/build", (c) => c.json(computers.buildTemplate()));

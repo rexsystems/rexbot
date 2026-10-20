@@ -17,18 +17,19 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 ## Plan
 
 ### Phase 1: Direct QEMU computers (replaces Proxmox)
-- [ ] `apps/api/src/computer/qemu.ts`: start/stop QEMU directly (`qemu-system-x86_64`, `qemu-img`),
+- [x] `apps/api/src/computer/qemu.ts`: start/stop QEMU directly (`qemu-system-x86_64`, `qemu-img`),
       KVM when `/dev/kvm` is usable, TCG fallback, QMP socket for graceful power-off, pidfile recovery after API restarts.
-- [ ] One VM per user (like a personal box): qcow2 overlay on a shared, provisioned template image,
+- [x] One VM per user (like a personal box): qcow2 overlay on a shared, provisioned template image,
       cloud-init NoCloud seed ISO (cloud-localds / genisoimage / xorriso), user-mode networking with
       SSH forwarded to a loopback port.
-- [ ] Template builder: download Debian 12 cloud image, boot once, run the guest setup (Xvfb, Openbox,
+- [x] Template builder: download Debian 12 cloud image, boot once, run the guest setup (Xvfb, Openbox,
       noVNC, Chromium...), clean cloud-init, store `template-vN.qcow2`.
-- [ ] Reuse the per-bot screen logic (`rex-sessiond`, noVNC proxy, locks, input, screenshots) through a
+- [x] Reuse the per-bot screen logic (`rex-sessiond`, noVNC proxy, locks, input, screenshots) through a
       generic `DesktopComputer` that talks to any VM power driver.
-- [ ] Idle shutdown, per-user CPU/RAM/disk limits, max running VMs (admin settings).
-- [ ] `scripts/qemu/setup-host.sh` (installs packages, checks KVM), docs in `docs/qemu-computer.md`.
-- [ ] Remove Proxmox code, scripts, env vars, and tests.
+- [x] Idle shutdown (off by default, the desktop stays on like before), per-user CPU/RAM/disk limits, max running VMs (app settings; UI in Phase 3).
+- [x] `scripts/qemu/setup-host.sh` (installs packages, checks KVM), docs in `docs/qemu-computer.md`, `pnpm --filter api build-image` CLI.
+- [x] Remove Proxmox code, scripts, env vars, and tests.
+- [ ] End-to-end check on a real host: image build + per-user VM boot + screen (running, see below).
 
 ### Phase 2: Accounts
 - [ ] `users`, `sessions`, `app_settings` tables; scrypt password hashes; HttpOnly session cookie
@@ -37,6 +38,7 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
       sign-up on/off (and choose invite-only).
 - [ ] Every conversation, bot, group, memory, upload, and computer is scoped to its owner.
       Existing single-user data is assigned to the first admin.
+- [ ] `http_fetch` must refuse private/loopback addresses once the API is multi-user (SSRF).
 - [ ] Optional `REX_HOST` binding and serving the built web app from the API for a single-origin deploy.
 
 ### Phase 3: Admin panel (`/admin`)
@@ -69,15 +71,20 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 
 ## Done
 
-(nothing yet)
+- Phase 1 code: `ComputerFleet` (apps/api/src/computer.ts) hands each owner a computer; `DesktopComputer`
+  (computer/desktop.ts) is the old per-bot screen logic over a generic `VmPower`; `QemuMachine`/`QemuHost`
+  (computer/qemu.ts) run QEMU, QMP, cloud-init seeds and the template build. Until accounts exist, every request
+  uses the owner id `LOCAL_OWNER = "local"`.
 
 ## In progress
 
-- Phase 1: QEMU backend.
+- Phase 1 verification: building the template on the dev box. Note: on this box nested KVM hangs, so it was
+  tested with `REX_QEMU_ACCEL=tcg`.
 
 ## Where I stopped
 
-Plan written. Next: implement `apps/api/src/computer/qemu.ts` and the generic desktop computer.
+QEMU backend committed. Next: finish the end-to-end VM check, then Phase 2 (accounts): users/sessions tables,
+auth middleware, replace `LOCAL_OWNER` with the signed-in user id everywhere.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
