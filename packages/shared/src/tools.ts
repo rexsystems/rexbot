@@ -138,16 +138,36 @@ export const CURSOR_AGENT_TOOL: ToolDefinition = {
   },
 };
 
+export const ROUTINE_TOOL: ToolDefinition = {
+  name: "routine",
+  description: "Manage scheduled routines for this chat: a routine re-sends a prompt to you on a schedule (daily at a time, on chosen weekdays, or every N hours) and you answer it then, with your tools. Use it ONLY when the user asks for something recurring or later (\"every morning send me...\", \"remind me on Fridays...\", \"check this every 6 hours\"). Times are in the user's time zone. Write the prompt as a self-contained instruction to your future self. Confirm the schedule back to the user after creating it. action=list shows this chat's routines; pause, resume and delete need routine_id from list or create.",
+  parameters: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["create", "list", "pause", "resume", "delete"] },
+      title: { type: "string", description: "For create: short name, e.g. Morning news brief" },
+      prompt: { type: "string", description: "For create: what to do each time, self-contained, up to 4000 characters" },
+      time: { type: "string", description: "For a daily/weekly routine: local time HH:MM (24h)" },
+      days: { type: "array", items: { type: "integer", minimum: 0, maximum: 6 }, description: "Optional weekdays, 0=Sunday..6=Saturday. Omit for every day." },
+      every_hours: { type: "integer", minimum: 1, maximum: 168, description: "For an interval routine instead of time: repeat every N hours" },
+      routine_id: { type: "string", description: "For pause/resume/delete" },
+    },
+    required: ["action"],
+  },
+};
+
 export interface ComputerToolOptions {
   backend?: ComputerBackendKind;
   desktop?: boolean;
   /** The user has a Cursor API key connected. */
   cursor?: boolean;
+  /** Scheduled routines are available in this context (not inside a routine run). */
+  routines?: boolean;
 }
 
 export function toolDefinitions(options: ComputerToolOptions = {}): ToolDefinition[] {
   const computerTools = options.desktop ? [DESKTOP_EXEC, DESKTOP_INPUT, DESKTOP_SCREENSHOT] : [PODMAN_EXEC];
-  return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : [])];
+  return [BASE_TOOLS[0]!, ...computerTools, ...BASE_TOOLS.slice(1), ...(options.cursor ? [CURSOR_AGENT_TOOL] : []), ...(options.routines ? [ROUTINE_TOOL] : [])];
 }
 
 /** Tool list for the local Podman computer; use toolDefinitions() when the backend is known. */

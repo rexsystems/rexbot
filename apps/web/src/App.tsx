@@ -34,6 +34,7 @@ import {
   IconComputer,
   IconMenu,
   IconBrain,
+  IconClock,
   IconCustomize,
   IconGroup,
   IconPlus,
@@ -60,6 +61,7 @@ import {
 } from "./MarkdownMessage";
 import { loadSettings, saveSettings } from "./settings";
 import { SettingsModal } from "./SettingsModal";
+import { RoutinesDrawer } from "./RoutinesDrawer";
 import { AccountModal } from "./AccountModal";
 import { useSession } from "./session";
 import { ComputerPanel } from "./ComputerPanel";
@@ -141,6 +143,7 @@ export function App() {
   const [deleteTarget, setDeleteTarget] = useState<Conversation | null>(null);
   const desktopComputer = useMediaQuery("(min-width: 75em)");
   const [showMemory, setShowMemory] = useState(false);
+  const [showRoutines, setShowRoutines] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [listsLoaded, setListsLoaded] = useState(false);
@@ -200,7 +203,7 @@ export function App() {
   useEffect(() => {
     function onEscape(event: KeyboardEvent) {
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      if (event.key === "Escape" && !botEditor && !showSettings && !showMemory) {
+      if (event.key === "Escape" && !botEditor && !showSettings && !showMemory && !showRoutines) {
         if (voiceBot) { setVoiceBot(null); return; }
         setShowComputer(false);
         setMobileNav(false);
@@ -208,7 +211,7 @@ export function App() {
     }
     window.addEventListener("keydown", onEscape);
     return () => window.removeEventListener("keydown", onEscape);
-  }, [botEditor, showSettings, showMemory, voiceBot]);
+  }, [botEditor, showSettings, showMemory, showRoutines, voiceBot]);
 
   useEffect(() => {
     const toolRunning = thread.some((item) => item.kind === "tool" && item.status === "running");
@@ -592,6 +595,7 @@ export function App() {
           <Stack gap={6} className="sidebar-footer">
             {busy ? <Group gap="xs" px="sm"><OrbitDots active /><Text size="sm" c="dimmed">Rex is working</Text></Group> : null}
             <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconBrain />} onClick={() => { setShowMemory(true); setMobileNav(false); }}><Group gap="xs"><span>Memory</span><Text span size="xs" c="dimmed">{memories.length}</Text></Group></Button>
+            <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconClock />} onClick={() => { setShowRoutines(true); setMobileNav(false); }}>Routines</Button>
             <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconSettings />} onClick={() => { setShowSettings(true); setMobileNav(false); }}>Settings</Button>
             <Menu position="top-start" width={240} withinPortal>
               <Menu.Target>
@@ -971,6 +975,7 @@ export function App() {
           newChat();
         }).catch((err) => setError(String(err)));
       }} /> : null}
+      <RoutinesDrawer opened={showRoutines} onClose={() => setShowRoutines(false)} conversations={conversations} activeId={activeId} onRan={(conversationId) => { if (conversationId === activeId) void openConversation(conversationId, { history: "none" }); }} />
       {showAccount ? <AccountModal onClose={() => setShowAccount(false)} /> : null}
       {showSettings ? (
         <SettingsModal

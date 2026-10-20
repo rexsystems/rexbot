@@ -81,7 +81,10 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
       (start / status / follow_up / list) offered only to users who connected a key, Settings → Models → Tools card.
 
 ### Phase 6: Assistant features (Grok Bot style)
-- [ ] Routines: scheduled prompts per bot (cron-like), run server-side, results posted in chat.
+- [x] Routines: scheduled prompts per bot or group (daily at a time, chosen weekdays, or every N hours, in the
+      user's time zone with DST handled), run server-side every 30 s, results posted in the chat. Sidebar → Routines,
+      plus a `routine` tool so a bot can set one up when asked ("every morning at 8..."). Routine runs can't create routines.
+- [x] The bot knows the current date and time in the user's zone (browser zone, remembered per user).
 - [ ] Skills: reusable instruction packs a bot can load.
 - [ ] Better bot rules in the system prompt.
 - [ ] Model vision for image attachments where the provider supports it.
@@ -117,6 +120,12 @@ Grok Bot-style assistant features. It is updated with every commit. If work stop
 - Phase 5: `integrations/cursor.ts` (Cloud Agents v1, Basic auth, `REX_CURSOR_API_URL` override for tests),
   routes `GET/PUT/DELETE /integrations/cursor`, `test/cursor.test.ts` (fake Cursor server), web `CursorCard.tsx`.
 
+- Phase 6 (routines): `chatTurn.ts` (the chat turn, shared by `POST /chat` and routines), `routines.ts`
+  (table, schedule math, runner, `routine` tool), `routes/routines.ts`, `test/routines.test.ts`, web `RoutinesDrawer.tsx`.
+  Known gaps: an open chat doesn't live-refresh when a routine posts (reopen it, or use Run now, which refreshes);
+  routines use the server-side provider connection, and web search in routines needs the Tavily key that still lives in
+  the browser (see Known gaps).
+
 ### ChatGPT sign-in: why not yet
 
 OpenAI's open-source "Sign in with ChatGPT" plan usage (developers.openai.com/siwc) is real and documented, but:
@@ -134,9 +143,8 @@ OpenAI UI guidelines.
 
 ## Where I stopped
 
-Phase 5 committed: Cursor Cloud Agents tool with the user's own key, subscription note in Settings → Models.
-ChatGPT sign-in deliberately deferred (reasons above). Next: Phase 6, starting with routines
-(scheduled prompts per bot), then skills, bot rules, vision.
+Phase 5 and Phase 6 routines committed. Next: skills (reusable instruction packs per bot), better bot rules,
+vision for image attachments, then moving the Tavily/Google keys server-side so routines can search.
 
 ## Research notes: connecting your own AI accounts (Oct 2026)
 

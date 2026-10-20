@@ -1,4 +1,6 @@
 import type {
+  Routine,
+  RoutineInput,
   ModelChoice,
   ProviderConnection,
   ProviderModel,
@@ -143,6 +145,7 @@ export async function streamChat(opts: {
       message: opts.message,
       uploadIds: opts.uploadIds,
       settings: opts.settings,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }),
     signal: opts.signal,
   });
@@ -217,6 +220,14 @@ export const providers = {
   remove: (connectionId: string) => json<ProviderState>(`/providers/connections/${id(connectionId)}`, { method: "DELETE" }),
   models: (input: { connectionId?: string; provider?: string; baseUrl?: string; apiKey?: string }) => json<{ models: ProviderModel[] }>("/providers/models", post(input)),
   setActive: (choice: ModelChoice | null) => json<ProviderState>("/providers/active", send("PUT", choice)),
+};
+
+export const routines = {
+  list: () => json<{ routines: Routine[] }>("/routines").then((result) => result.routines),
+  create: (input: RoutineInput) => json<{ routine: Routine }>("/routines", post(input)).then((result) => result.routine),
+  update: (routineId: string, patch: Partial<RoutineInput>) => json<{ routine: Routine }>(`/routines/${id(routineId)}`, send("PATCH", patch)).then((result) => result.routine),
+  remove: (routineId: string) => json<{ ok: boolean }>(`/routines/${id(routineId)}`, { method: "DELETE" }),
+  run: (routineId: string) => json<{ ok: boolean; error?: string; routine: Routine }>(`/routines/${id(routineId)}/run`, post()),
 };
 
 export interface CursorStatus { connected: boolean; keyHint: string | null; keyName: string | null }

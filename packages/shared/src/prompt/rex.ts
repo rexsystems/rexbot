@@ -36,11 +36,14 @@ const DESKTOP_COMPUTER_NOTE = "- Rex Computer is a Linux VM that every bot share
 
 export interface PromptOptions {
   desktop?: boolean;
+  /** Current local date and time, already formatted, plus the zone name. */
+  now?: { text: string; timeZone: string };
 }
 
 export function buildSystemPrompt(memoryBlock?: string, bot?: BotProfile, options: PromptOptions = {}): string {
   const base = `${REX_SYSTEM_PROMPT.replace("{{COMPUTER}}", options.desktop ? DESKTOP_COMPUTER_NOTE : PODMAN_COMPUTER_NOTE)}\n\n${ANTISLOP_RULES}`;
-  const prompt = bot ? `${base}\n\nYour display name is ${JSON.stringify(bot.name)}. Use that name instead of Rex when identifying yourself.\nUser's preferences for this bot: ${JSON.stringify(bot.instructions || "Use the default tone.")}` : base;
+  const clock = options.now ? `\n\nIt is now ${options.now.text} in the user's time zone (${options.now.timeZone}). Use this for "today", "tomorrow" and schedules; don't guess the date.` : "";
+  const prompt = bot ? `${base}\n\nYour display name is ${JSON.stringify(bot.name)}. Use that name instead of Rex when identifying yourself.\nUser's preferences for this bot: ${JSON.stringify(bot.instructions || "Use the default tone.")}${clock}` : `${base}${clock}`;
   if (!memoryBlock?.trim()) return prompt;
   return `${prompt}
 

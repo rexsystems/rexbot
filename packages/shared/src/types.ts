@@ -177,7 +177,7 @@ export interface VoiceSessionConfig {
   history: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }>;
 }
 
-export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent";
+export type ToolName = "web_search" | "read_upload" | "http_fetch" | "computer_exec" | "computer_input" | "computer_screenshot" | "react_message" | "message_bot" | "end_call" | "cursor_agent" | "routine";
 
 export interface ToolCallEvent {
   type: "tool_start" | "tool_end";
@@ -205,6 +205,8 @@ export interface ChatRequestBody {
   message: string;
   uploadIds?: string[];
   settings: ClientSettings;
+  /** The browser's IANA time zone, used for the bot's sense of "now" and for routines. */
+  timeZone?: string;
 }
 
 export interface UploadMeta {
@@ -303,4 +305,33 @@ export interface AdminUsage {
   daily: Array<{ day: string; messages: number; promptTokens: number; completionTokens: number }>;
   byUser: Array<{ userId: string; name: string; email: string; messages: number; promptTokens: number; completionTokens: number }>;
   byModel: Array<{ provider: string; model: string; requests: number; promptTokens: number; completionTokens: number }>;
+}
+
+/** When a routine runs. Days are 0 (Sunday) to 6; an empty or missing list means every day. */
+export type RoutineSchedule =
+  | { kind: "daily"; time: string; days?: number[] }
+  | { kind: "interval"; hours: number };
+
+export interface Routine {
+  id: string;
+  conversationId: string;
+  title: string;
+  prompt: string;
+  schedule: RoutineSchedule;
+  timeZone: string;
+  enabled: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: "ok" | "error" | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export interface RoutineInput {
+  conversationId: string;
+  title: string;
+  prompt: string;
+  schedule: RoutineSchedule;
+  timeZone: string;
+  enabled?: boolean;
 }

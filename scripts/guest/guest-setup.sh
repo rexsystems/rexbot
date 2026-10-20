@@ -12,8 +12,9 @@ if [ "${REX_APT_HTTP:-}" = "1" ]; then
   sed -i 's#https://#http://#g' /etc/apt/mirrors/*.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
 fi
 # Fail here, not at install, when the mirrors are unreachable.
-apt-get update -o APT::Update::Error-Mode=any
-apt-get install -y --no-install-recommends \
+export APT_RETRIES="-o Acquire::Retries=5"
+apt-get update $APT_RETRIES -o APT::Update::Error-Mode=any
+apt-get install $APT_RETRIES -y --no-install-recommends \
   openssh-server cloud-guest-utils python3 python3-pip python3-venv git curl ca-certificates \
   xvfb openbox tint2 x11vnc novnc websockify xdotool wmctrl scrot xclip x11-xserver-utils \
   xterm chromium firefox-esr dbus-x11 procps \

@@ -136,7 +136,7 @@ export async function runTool(
   name: string,
   argsJson: string,
   settings: ClientSettings,
-  context?: { userMessageId: string; ownerId?: string } & Partial<MessagingContext>,
+  context?: { userMessageId: string; ownerId?: string; conversationId?: string; timeZone?: string } & Partial<MessagingContext>,
 ): Promise<string> {
   let args: Record<string, unknown> = {};
   try {
@@ -188,6 +188,10 @@ export async function runTool(
       return readUpload(String(args.upload_id ?? ""), context?.ownerId);
     case "http_fetch":
       return httpFetch(String(args.url ?? ""));
+    case "routine": {
+      const { routineTool } = await import("../routines.js");
+      return routineTool(context?.ownerId, context?.conversationId, context?.timeZone, args);
+    }
     case "cursor_agent": {
       const { cursorAgentTool } = await import("../integrations/cursor.js");
       return cursorAgentTool(context?.ownerId, args);
