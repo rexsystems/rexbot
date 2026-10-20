@@ -244,7 +244,7 @@ function DesktopScreen({
         <Text fw={600}>{bot?.name ?? "Bot"}</Text>
         <Button variant={controlling ? "filled" : "default"} size="compact-md" disabled={!session || !ready} loading={changingControl} onClick={() => void toggleControl()}>{controlling ? "Return control" : "Take control"}</Button>
       </Group>
-      <Text size="sm" c="dimmed">{controlling ? "You control the mouse and keyboard. Return control when you finish." : "Watch the bot, or take control to use its computer."}</Text>
+      <Text size="sm" c="dimmed">{controlling ? "You control the mouse and keyboard. The bot keeps working in the background." : "Watch the bot, or take control to use its computer."}</Text>
       {error ? <Alert color="red" title="Computer error" role="alert">{error}</Alert> : null}
       {!status.available ? <Alert color="orange" title="Unavailable">{status.detail}</Alert> : null}
       {!ready ? (

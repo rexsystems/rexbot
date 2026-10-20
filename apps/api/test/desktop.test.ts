@@ -28,6 +28,10 @@ function fakeGuest() {
     calls.push({ args, input });
     const [, command, botId] = args;
     const ok = (output: string): SshResult => ({ code: 0, output, timedOut: false });
+    if (args[0] === "python3") {
+      const payload = JSON.parse(Buffer.from(input!.match(/bytes.fromhex\("([a-f0-9]+)"\)/)![1]!, "hex").toString());
+      return ok(JSON.stringify({ operation: payload.operation, browser_launched: payload.open_browser }));
+    }
     if (command === "ping") return ok("ok");
     if (command === "ensure") {
       if (!slots.has(botId!)) slots.set(botId!, slots.size);
@@ -126,18 +130,25 @@ test("one action at a time per bot", async () => {
   await first;
 });
 
-test("owner control unlocks input and holds off bot actions until returned", async () => {
-  const { vm, computer } = computerWith();
+test("owner control reserves keyboard input while background work continues", async () => {
+  const { vm, guest, computer } = computerWith();
   vm.setState("running");
   await computer.input("bot_a", { action: "key", keys: "Return" });
   await computer.takeControl("bot_a");
   assert.equal(computer.sessionState("bot_a").locked, false);
-  await assert.rejects(computer.input("bot_a", { action: "click", x: 1, y: 2 }), /taken control/);
-  await assert.rejects(computer.execute("echo one", "bot_a"), /taken control/);
+  await assert.rejects(computer.input("bot_a", { action: "click", x: 1, y: 2 }), /user has the mouse and keyboard/);
+  assert.equal((await computer.execute("echo one", "bot_a")).exitCode, 0);
+  assert.match(guest.calls.find((call) => call.args[1] === "exec")!.input!, /^unset DISPLAY DBUS_SESSION_BUS_ADDRESS\n/);
+  assert.ok(JSON.parse(await computer.screenshot("bot_a")).path);
+  assert.equal(JSON.parse(await computer.workspace("bot_a", "files", { action: "write", path: "index.html", content: "working" })).operation, "files");
+  assert.equal(JSON.parse(await computer.workspace("bot_a", "project", { action: "start" })).browser_launched, false);
   computer.lastUsed = 0;
   assert.equal(computer.isIdle(1), false);
   computer.releaseControl("bot_a");
   assert.equal((await computer.execute("echo one", "bot_a")).exitCode, 0);
+  assert.equal(JSON.parse(await computer.workspace("bot_a", "project", { action: "open" })).browser_launched, true);
+  await computer.input("bot_a", { action: "key", keys: "Return" });
+  await computer.unlock("bot_a");
 });
 
 test("taking control wins over a bot action already waiting to lock the screen", async () => {
@@ -157,7 +168,7 @@ test("taking control wins over a bot action already waiting to lock the screen",
   await started;
   await computer.takeControl("bot_a");
   resume();
-  await assert.rejects(action, /taken control/);
+  await assert.rejects(action, /user has the mouse and keyboard/);
   assert.equal(computer.sessionState("bot_a").locked, false);
   assert.ok(!guest.calls.some((call) => call.args[1] === "input"));
 });

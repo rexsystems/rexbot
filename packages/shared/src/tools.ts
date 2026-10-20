@@ -22,7 +22,7 @@ const PODMAN_EXEC: ToolDefinition = {
 
 const DESKTOP_EXEC: ToolDefinition = {
   name: "computer_exec",
-  description: "Run a bash command on Rex Computer. cwd is /workspace/bots/<your id>; ./shared is shared. Passwordless sudo, network, DISPLAY + dbus for your screen. Write and edit files here (heredoc, printf, editors) instead of pasting code into chat. Launch GUI apps detached: `setsid -f rex-browser URL >/dev/null 2>&1` or `setsid -f xterm >/dev/null 2>&1`. 5-minute limit. Not the user's PC.",
+  description: "Run a bash command on Rex Computer. cwd is /workspace/bots/<your id>; ./shared is shared. Passwordless sudo, network, DISPLAY + dbus for your screen. Prefer computer_files for file editing and computer_project for servers. Commands keep working when the user takes the keyboard; DISPLAY/dbus are unset then, so continue background builds and tests without opening windows or sending screen input. Otherwise launch GUI apps detached: `setsid -f rex-browser URL >/dev/null 2>&1`. 5-minute limit. Not the user's PC.",
   parameters: {
     type: "object",
     properties: { command: { type: "string", description: "Bash command to run on the VM" } },

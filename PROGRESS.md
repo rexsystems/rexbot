@@ -159,6 +159,11 @@ accepts messages during active work, interrupts provider generation, skips obsol
 command finishes, and respects new group mentions. API and browser regression checks pass. The earlier DSML
 screenshot was taken before the user restarted the old app; it was not evidence of a new parser regression.
 
+Take control now reserves only mouse/keyboard input. Bots keep editing files, running background shell commands,
+inspecting projects and taking screenshots. New shell calls have DISPLAY/dbus unset during owner control, and
+project helpers defer browser opening. Desktop unit coverage and the live VM regression verify continued work
+without stealing the owner's screen.
+
 ## Research notes: connecting your own AI accounts (Oct 2026)
 
 - **Claude (Anthropic)**: third-party apps must use API keys from Claude Console. Anthropic's Claude Code legal

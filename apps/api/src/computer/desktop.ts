@@ -308,7 +308,6 @@ export class DesktopComputer {
   private async withBot<T>(botId: string, work: () => Promise<T>): Promise<T> {
     assertBotId(botId);
     this.lastUsed = Date.now();
-    if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has taken control of this computer. Wait until they return control before using it.");
     if (this.busyBots.has(botId)) throw new Error("This bot is already using Rex Computer. Wait for its current command to finish.");
     this.busyBots.add(botId);
     try { return await work(); } finally { this.busyBots.delete(botId); this.lastUsed = Date.now(); }
@@ -319,7 +318,8 @@ export class DesktopComputer {
     return this.withBot(botId, async () => {
       if (botId !== OWNER_SESSION) await this.ensureGuestSession(botId);
       else await this.ensureRunning();
-      const result = await this.ssh(["rex-sessiond", "exec", botId], command, this.options.execTimeoutMs);
+      const backgroundCommand = (this.ownerControl.get(botId) ?? 0) > Date.now() ? `unset DISPLAY DBUS_SESSION_BUS_ADDRESS\n${command}` : command;
+      const result = await this.ssh(["rex-sessiond", "exec", botId], backgroundCommand, this.options.execTimeoutMs);
       const timedOut = result.timedOut || result.code === 124;
       return { command, output: result.output.slice(0, 32_000) || "(no output)", exitCode: result.timedOut ? 124 : result.code, timedOut };
     });
@@ -329,11 +329,11 @@ export class DesktopComputer {
     const action = validateInput(raw);
     return this.withBot(botId, async () => {
       await this.ensureGuestSession(botId);
-      if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has taken control of this computer.");
+      if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has the mouse and keyboard. Continue with files, shell commands or project checks; wait for Return control before screen input.");
       await this.lock(botId);
       if ((this.ownerControl.get(botId) ?? 0) > Date.now()) {
         await this.unlock(botId);
-        throw new Error("The user has taken control of this computer.");
+        throw new Error("The user has the mouse and keyboard. Continue with files, shell commands or project checks; wait for Return control before screen input.");
       }
       const result = await this.guest(["input", botId], JSON.stringify(action));
       if (result.code !== 0) throw new Error(result.output || "Input failed.");
@@ -342,11 +342,10 @@ export class DesktopComputer {
   }
 
   async workspace(botId: string, operation: "files" | "project", args: Record<string, unknown>): Promise<string> {
-    const payload = JSON.stringify({ bot: botId, operation, args });
-    if (Buffer.byteLength(payload) > 300_000) throw new Error("Workspace request exceeds 300 KB.");
+    if (Buffer.byteLength(JSON.stringify(args)) > 299_000) throw new Error("Workspace request exceeds 300 KB.");
     return this.withBot(botId, async () => {
       await this.ensureGuestSession(botId);
-      if ((this.ownerControl.get(botId) ?? 0) > Date.now()) throw new Error("The user has taken control of this computer.");
+      const payload = JSON.stringify({ bot: botId, operation, args, open_browser: (this.ownerControl.get(botId) ?? 0) <= Date.now() });
       const helper = readFileSync(new URL("../../../../scripts/guest/rex-workspace.py", import.meta.url), "utf8");
       const input = `import json\nREQUEST = json.loads(bytes.fromhex("${Buffer.from(payload).toString("hex")}").decode())\n${helper}`;
       const result = await this.ssh(["python3", "-"], input, 30_000);

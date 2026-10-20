@@ -92,7 +92,7 @@ def probe(port, route="/"):
         connection.close()
 
 
-def project(root, bot, args):
+def project(root, bot, args, allow_browser=True):
     folder = Path("/var/lib/rex-sessiond/projects")
     folder.mkdir(parents=True, exist_ok=True)
     state_file, logfile = folder / f"{bot}.json", folder / f"{bot}.log"
@@ -151,6 +151,10 @@ def project(root, bot, args):
     if result["running"] and action != "logs":
         result["check"] = probe(state["port"], args.get("path", "/"))
         if action in ("start", "open") and result["check"].get("http_status") is not None:
+            if not allow_browser:
+                result["browser_launched"] = False
+                result["note"] = "The user has the screen. The server continues in the background; open it after they return control."
+                return result
             sessions = json.loads(subprocess.check_output(["rex-sessiond", "status"], text=True, timeout=10))["sessions"]
             session = next((s for s in sessions if s["botId"] == bot and s["alive"]), None)
             if session:
@@ -166,7 +170,7 @@ def main(request):
         raise ValueError("Invalid bot id.")
     root = Path("/workspace/bots") / bot
     root.mkdir(parents=True, exist_ok=True)
-    return files(root, request["args"]) if request["operation"] == "files" else project(root, bot, request["args"])
+    return files(root, request["args"]) if request["operation"] == "files" else project(root, bot, request["args"], request.get("open_browser", True))
 
 
 if "REQUEST" in globals():

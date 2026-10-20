@@ -55,12 +55,20 @@ test("live guest reaches public websites through the proxy and cannot reach the 
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
     assert.match(windows, /Guest project check/, "the guest browser must load the local project");
+    await desktop.takeControl("project-check");
+    await assert.rejects(desktop.input("project-check", { action: "key", keys: "Return" }), /user has the mouse and keyboard/);
+    const background = await desktop.execute('printf "%s" "${DISPLAY-unset}"', "project-check");
+    assert.equal(background.exitCode, 0);
+    assert.equal(background.output, "unset");
     await workspace("files", { action: "replace", path: "site/index.html", old_text: "Before edit", new_text: "After edit" });
     assert.match((await workspace("project", { action: "inspect" })).check.source_excerpt, /After edit/);
     assert.equal((await workspace("project", { action: "stop" })).running, false);
     assert.equal((await workspace("project", { action: "status" })).running, false);
     const custom = await workspace("project", { action: "start", directory: "site", command: "exec python3 -m http.server $PORT --bind $HOST" });
     assert.equal(custom.check.http_status, 200);
+    assert.equal(custom.browser_launched, false);
+    desktop.releaseControl("project-check");
+    assert.equal((await workspace("project", { action: "open" })).browser_launched, true);
     await workspace("project", { action: "stop" });
     console.log("Live VM: public HTTPS works; host, private IPs, metadata and direct host access blocked.");
     console.log("Live VM: structured file editing, browser launch, persistent static/custom servers, inspection and shutdown work.");
