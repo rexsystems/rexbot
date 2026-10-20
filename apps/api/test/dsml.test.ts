@@ -4,7 +4,7 @@ import { normalizeToolMarkup, parseDsml } from "../src/dsml.js";
 import type { ChatCompletionChunk } from "../src/llm.js";
 
 const command = "cd ~/siteparts && cat > 05_services.html <<'EOF'\n<section>Services</section>\nEOF";
-const markup = `<｜DSML｜calls><｜DSML｜invoke name="computer_exec"><｜DSML｜parameter name="command" string="true">${command}<｜DSML｜/parameter><｜DSML｜/invoke><｜DSML｜/calls>`;
+const markup = `<｜DSML｜calls><｜DSML｜invoke name="computer_exec"><｜DSML｜parameter name="command" string="true">${command}</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜calls>`;
 const tools = [{ function: { name: "computer_exec" } }];
 
 test("DSML tool markup survives arbitrary stream splits without leaking into chat", async () => {
@@ -25,4 +25,17 @@ test("DSML tool markup survives arbitrary stream splits without leaking into cha
 test("invalid and unavailable DSML calls cannot execute", () => {
   assert.throws(() => parseDsml(markup, new Set()), /unavailable/);
   assert.throws(() => parseDsml(markup.slice(0, -20), new Set(["computer_exec"])), /incomplete/);
+});
+
+test("normal text, HTML and native tool deltas retain their content and reasoning", async () => {
+  async function* source(): AsyncGenerator<ChatCompletionChunk> {
+    yield { choices: [{ delta: { content: "Use <" } }] };
+    yield { choices: [{ delta: { content: "section> here.", reasoning_content: "checked" } }] };
+    yield { choices: [{ delta: { content: "Ready", tool_calls: [{ index: 0, id: "native", function: { name: "computer_exec", arguments: "{}" } }] } }] };
+  }
+  const chunks = [];
+  for await (const chunk of normalizeToolMarkup(source(), tools)) chunks.push(chunk);
+  assert.equal(chunks.map((chunk) => chunk.choices?.[0]?.delta?.content ?? "").join(""), "Use <section> here.Ready");
+  assert.equal(chunks.map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content ?? "").join(""), "checked");
+  assert.equal(chunks.flatMap((chunk) => chunk.choices?.[0]?.delta?.tool_calls ?? []).length, 1);
 });

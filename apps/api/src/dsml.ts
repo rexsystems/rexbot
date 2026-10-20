@@ -3,13 +3,14 @@ import type { ChatCompletionChunk } from "./llm.js";
 
 const marker = /<[｜|]\s*DSML\s*[｜|]\s*/;
 const tag = String.raw`<[｜|]\s*DSML\s*[｜|]\s*`;
+const closeTag = String.raw`(?:</[｜|]\s*DSML\s*[｜|]\s*|<[｜|]\s*DSML\s*[｜|]\s*/)`;
 
 export function parseDsml(text: string, allowed: Set<string>) {
   const calls: Array<{ index: number; id: string; type: string; function: { name: string; arguments: string } }> = [];
-  const wrapper = new RegExp(`^${tag}(?:function_)?calls>([\\s\\S]*)${tag}\\/(?:function_)?calls>\\s*$`).exec(text);
+  const wrapper = new RegExp(`^${tag}(?:function_)?calls>([\\s\\S]*)${closeTag}(?:function_)?calls>\\s*$`).exec(text);
   if (!wrapper) throw new Error("The model returned an incomplete tool call. Please retry the request.");
-  const invoke = new RegExp(`${tag}invoke\\s+name="([^"]+)"\\s*>([\\s\\S]*?)${tag}\\/invoke>`, "g");
-  const parameter = new RegExp(`${tag}parameter\\s+name="([^"]+)"(?:\\s+string="(true|false)")?\\s*>([\\s\\S]*?)${tag}\\/parameter>`, "g");
+  const invoke = new RegExp(`${tag}invoke\\s+name="([^"]+)"\\s*>([\\s\\S]*?)${closeTag}invoke>`, "g");
+  const parameter = new RegExp(`${tag}parameter\\s+name="([^"]+)"(?:\\s+string="(true|false)")?\\s*>([\\s\\S]*?)${closeTag}parameter>`, "g");
   let rest = wrapper[1]!;
   for (const call of wrapper[1]!.matchAll(invoke)) {
     const name = call[1]!;
@@ -38,6 +39,7 @@ export async function* normalizeToolMarkup(source: AsyncIterable<ChatCompletionC
     const delta = chunk.choices?.[0]?.delta;
     if (delta?.tool_calls?.length) native = true;
     if (!delta?.content) { yield chunk; continue; }
+    if (delta.reasoning_content || delta.tool_calls) yield { ...chunk, choices: [{ ...chunk.choices?.[0], delta: { ...delta, content: undefined } }] };
     pending += delta.content;
     const start = pending.search(marker);
     if (start >= 0) {
@@ -49,10 +51,8 @@ export async function* normalizeToolMarkup(source: AsyncIterable<ChatCompletionC
       // Hold a possible split marker until the next chunk arrives.
       const partial = pending.lastIndexOf("<");
       const cut = partial >= 0 && /^<(?:[｜|](?:\s*D(?:S(?:M(?:L(?:\s*[｜|])?)?)?)?)?)?$/.test(pending.slice(partial)) ? partial : pending.length;
-      if (cut) yield { ...chunk, choices: [{ ...chunk.choices?.[0], delta: { ...delta, content: pending.slice(0, cut) } }] };
+      if (cut) yield { ...chunk, choices: [{ ...chunk.choices?.[0], delta: { content: pending.slice(0, cut) } }] };
       pending = pending.slice(cut);
-    } else if (delta.reasoning_content || delta.tool_calls) {
-      yield { ...chunk, choices: [{ ...chunk.choices?.[0], delta: { ...delta, content: undefined } }] };
     }
   }
   if (markup) {
